@@ -2371,6 +2371,10 @@ export function heartbeatService(db: Db) {
       agent.status === "terminated" ||
       agent.status === "pending_approval"
     ) {
+      await writeSkippedRequest(`agent.${agent.status}`);
+      if (source === "timer") {
+        return null;
+      }
       throw conflict("Agent is not invokable in its current state", { status: agent.status });
     }
 
@@ -3127,7 +3131,7 @@ export function heartbeatService(db: Db) {
       let skipped = 0;
 
       for (const agent of allAgents) {
-        if (agent.status === "paused" || agent.status === "terminated" || agent.status === "pending_approval") continue;
+        if (agent.status === "terminated" || agent.status === "pending_approval") continue;
         const policy = parseHeartbeatPolicy(agent);
         if (!policy.enabled || policy.intervalSec <= 0) continue;
 
