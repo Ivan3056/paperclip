@@ -14,7 +14,7 @@ import {
 } from "@paperclipai/adapter-utils/server-utils";
 import { discoverKiloCodeModels, ensureKiloCodeModelConfiguredAndAvailable } from "./models.js";
 import { parseKiloCodeJsonl } from "./parse.js";
-import { firstNonEmptyLine, normalizeEnv } from "./utils.js";
+import { firstNonEmptyLine, normalizeEnv, resolveKiloCodeCommand } from "./utils.js";
 
 function summarizeStatus(checks: AdapterEnvironmentCheck[]): AdapterEnvironmentTestResult["status"] {
   if (checks.some((check) => check.level === "error")) return "fail";
@@ -38,7 +38,7 @@ export async function testEnvironment(
 ): Promise<AdapterEnvironmentTestResult> {
   const checks: AdapterEnvironmentCheck[] = [];
   const config = parseObject(ctx.config);
-  const command = asString(config.command, "kilo");
+  const command = resolveKiloCodeCommand(config.command);
   const cwd = asString(config.cwd, process.cwd());
 
   try {
@@ -121,7 +121,7 @@ export async function testEnvironment(
           code: "kilocode_models_empty",
           level: "error",
           message: "KiloCode returned no models.",
-          hint: "Run `kilo models` and verify provider authentication.",
+          hint: `Run \`${command} models\` and verify provider authentication.`,
         });
       }
     } catch (err) {
@@ -132,14 +132,14 @@ export async function testEnvironment(
           level: "warn",
           message: "The configured model was not found by provider.",
           detail: errMsg,
-          hint: "Run `kilo models` and choose an available provider/model ID.",
+          hint: `Run \`${command} models\` and choose an available provider/model ID.`,
         });
       } else {
         checks.push({
           code: "kilocode_models_discovery_failed",
           level: "error",
           message: errMsg || "KiloCode model discovery failed.",
-          hint: "Run `kilo models` manually to verify provider auth and config.",
+          hint: `Run \`${command} models\` manually to verify provider auth and config.`,
         });
       }
     }
@@ -161,14 +161,14 @@ export async function testEnvironment(
           level: "warn",
           message: "The configured model was not found by provider.",
           detail: errMsg,
-          hint: "Run `kilo models` and choose an available provider/model ID.",
+          hint: `Run \`${command} models\` and choose an available provider/model ID.`,
         });
       } else {
         checks.push({
           code: "kilocode_models_discovery_failed",
           level: "warn",
           message: errMsg || "KiloCode model discovery failed (best-effort, no model configured).",
-          hint: "Run `kilo models` manually to verify provider auth and config.",
+          hint: `Run \`${command} models\` manually to verify provider auth and config.`,
         });
       }
     }
@@ -195,7 +195,7 @@ export async function testEnvironment(
         code: "kilocode_model_invalid",
         level: "error",
         message: err instanceof Error ? err.message : "Configured model is unavailable.",
-        hint: "Run `kilo models` and choose a currently available provider/model ID.",
+          hint: `Run \`${command} models\` and choose a currently available provider/model ID.`,
       });
     }
   }
@@ -253,7 +253,7 @@ export async function testEnvironment(
           ...(hasHello
             ? {}
             : {
-                hint: "Run `kilo run --auto --format json` manually and prompt `Respond with hello` to inspect output.",
+                hint: `Run \`${command} run --auto --format json\` manually and prompt \`Respond with hello\` to inspect output.`,
               }),
         });
       } else if (/ProviderModelNotFoundError/i.test(authEvidence)) {
@@ -262,7 +262,7 @@ export async function testEnvironment(
           level: "warn",
           message: "The configured model was not found by provider.",
           ...(detail ? { detail } : {}),
-          hint: "Run `kilo models` and choose an available provider/model ID.",
+          hint: `Run \`${command} models\` and choose an available provider/model ID.`,
         });
       } else if (KILOCODE_AUTH_REQUIRED_RE.test(authEvidence)) {
         checks.push({
@@ -270,7 +270,7 @@ export async function testEnvironment(
           level: "warn",
           message: "KiloCode is installed, but provider authentication is not ready.",
           ...(detail ? { detail } : {}),
-          hint: "Run `kilo auth login` or set provider credentials, then retry probe.",
+          hint: `Run \`${command} auth login\` or set provider credentials, then retry probe.`,
         });
       } else {
         checks.push({
@@ -278,7 +278,7 @@ export async function testEnvironment(
           level: "error",
           message: "KiloCode hello probe failed.",
           ...(detail ? { detail } : {}),
-          hint: "Run `kilo run --auto --format json` manually in this working directory to debug.",
+          hint: `Run \`${command} run --auto --format json\` manually in this working directory to debug.`,
         });
       }
     } catch (err) {
@@ -287,7 +287,7 @@ export async function testEnvironment(
         level: "error",
         message: "KiloCode hello probe failed.",
         detail: err instanceof Error ? err.message : String(err),
-        hint: "Run `kilo run --auto --format json` manually in this working directory to debug.",
+        hint: `Run \`${command} run --auto --format json\` manually in this working directory to debug.`,
       });
     }
   }

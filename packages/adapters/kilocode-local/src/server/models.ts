@@ -6,19 +6,10 @@ import {
   ensurePathInEnv,
   runChildProcess,
 } from "@paperclipai/adapter-utils/server-utils";
-import { firstNonEmptyLine, normalizeEnv } from "./utils.js";
+import { firstNonEmptyLine, normalizeEnv, resolveKiloCodeCommand } from "./utils.js";
 
 const MODELS_CACHE_TTL_MS = 60_000;
 const MODELS_DISCOVERY_TIMEOUT_MS = 20_000;
-
-function resolveKiloCodeCommand(input: unknown): string {
-  const envOverride =
-    typeof process.env.PAPERCLIP_KILOCODE_COMMAND === "string" &&
-    process.env.PAPERCLIP_KILOCODE_COMMAND.trim().length > 0
-      ? process.env.PAPERCLIP_KILOCODE_COMMAND.trim()
-      : "kilo";
-  return asString(input, envOverride);
-}
 
 const discoveryCache = new Map<string, { expiresAt: number; models: AdapterModel[] }>();
 const VOLATILE_ENV_KEY_PREFIXES = ["PAPERCLIP_", "npm_", "NPM_"] as const;
@@ -87,6 +78,7 @@ export async function discoverKiloCodeModels(input: {
   env?: unknown;
 } = {}): Promise<AdapterModel[]> {
   const command = resolveKiloCodeCommand(input.command);
+  const modelsCommand = `\`${command} models\``;
   const cwd = asString(input.cwd, process.cwd());
   const env = normalizeEnv(input.env);
   let resolvedHome: string | undefined;
@@ -110,11 +102,11 @@ export async function discoverKiloCodeModels(input: {
   );
 
   if (result.timedOut) {
-    throw new Error(`\`kilo models\` timed out after ${MODELS_DISCOVERY_TIMEOUT_MS / 1000}s.`);
+    throw new Error(`${modelsCommand} timed out after ${MODELS_DISCOVERY_TIMEOUT_MS / 1000}s.`);
   }
   if ((result.exitCode ?? 1) !== 0) {
     const detail = firstNonEmptyLine(result.stderr) || firstNonEmptyLine(result.stdout);
-    throw new Error(detail ? `\`kilo models\` failed: ${detail}` : "`kilo models` failed.");
+    throw new Error(detail ? `${modelsCommand} failed: ${detail}` : `${modelsCommand} failed.`);
   }
 
   return sortModels(parseModelsOutput(result.stdout));
@@ -155,9 +147,10 @@ export async function ensureKiloCodeModelConfiguredAndAvailable(input: {
     cwd: input.cwd,
     env: input.env,
   });
+  const command = resolveKiloCodeCommand(input.command);
 
   if (models.length === 0) {
-    throw new Error("KiloCode returned no models. Run `kilo models` and verify provider auth.");
+    throw new Error(`KiloCode returned no models. Run \`${command} models\` and verify provider auth.`);
   }
 
   if (!models.some((entry) => entry.id === model)) {

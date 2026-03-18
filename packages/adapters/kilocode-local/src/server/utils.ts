@@ -1,3 +1,5 @@
+import { asString } from "@paperclipai/adapter-utils/server-utils";
+
 export function firstNonEmptyLine(text: string): string {
   return (
     text
@@ -15,4 +17,13 @@ export function normalizeEnv(input: unknown): Record<string, string> {
     if (typeof value === "string") env[key] = value;
   }
   return env;
+}
+
+export function resolveKiloCodeCommand(input: unknown): string {
+  const envOverride =
+    typeof process.env.PAPERCLIP_KILOCODE_COMMAND === "string" &&
+    process.env.PAPERCLIP_KILOCODE_COMMAND.trim().length > 0
+      ? process.env.PAPERCLIP_KILOCODE_COMMAND.trim()
+      : "kilo";
+  return asString(input, envOverride);
 }
