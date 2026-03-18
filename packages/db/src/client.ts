@@ -678,8 +678,58 @@ export async function applyPendingMigrations(url: string): Promise<void> {
   }
 
   if (initialState.reason === "no-migration-journal-non-empty-db") {
+    const sql = createUtilitySql(url);
+    try {
+      const { migrationTableSchema, columnNames } = await ensureMigrationJournalTable(sql);
+      const qualifiedTable = `${quoteIdentifier(migrationTableSchema)}.${quoteIdentifier(DRIZZLE_MIGRATIONS_TABLE)}`;
+      const journalEntries = await listJournalMigrationEntries();
+      const folderMillisByFileName = new Map(
+        journalEntries.map((entry) => [entry.fileName, normalizeFolderMillis(entry.folderMillis)]),
+      );
+      const orderedPendingMigrations = await orderMigrationsByJournal(initialState.pendingMigrations);
+
+      for (const migrationFile of orderedPendingMigrations) {
+        const migrationContent = await readMigrationFileContent(migrationFile);
+        const hash = createHash("sha256").update(migrationContent).digest("hex");
+        const alreadyApplied = await migrationContentAlreadyApplied(sql, migrationContent);
+
+        if (alreadyApplied) {
+          const existingEntry = await migrationHistoryEntryExists(sql, qualifiedTable, columnNames, migrationFile, hash);
+          if (!existingEntry) {
+            await recordMigrationHistoryEntry(
+              sql,
+              qualifiedTable,
+              columnNames,
+              migrationFile,
+              hash,
+              folderMillisByFileName.get(migrationFile) ?? Date.now(),
+            );
+          }
+          continue;
+        }
+
+        await runInTransaction(sql, async () => {
+          for (const statement of splitMigrationStatements(migrationContent)) {
+            await sql.unsafe(statement);
+          }
+          await recordMigrationHistoryEntry(
+            sql,
+            qualifiedTable,
+            columnNames,
+            migrationFile,
+            hash,
+            folderMillisByFileName.get(migrationFile) ?? Date.now(),
+          );
+        });
+      }
+    } finally {
+      await sql.end();
+    }
+
+    const reconciledState = await inspectMigrations(url);
+    if (reconciledState.status === "upToDate") return;
     throw new Error(
-      "Database has tables but no migration journal; automatic migration is unsafe. Initialize migration history manually.",
+      `Failed to reconcile migrations for existing database: ${reconciledState.pendingMigrations.join(", ")}`,
     );
   }
 
