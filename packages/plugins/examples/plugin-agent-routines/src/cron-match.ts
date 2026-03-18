@@ -179,16 +179,34 @@ function parseCron(expression: string): ParsedCron {
 /**
  * Check whether a cron expression matches the given date at minute-level
  * granularity (UTC). Returns `true` if the current minute matches.
+ *
+ * Uses standard vixie-cron OR semantics for the day fields: when both
+ * day-of-month and day-of-week are restricted (non-wildcard), the date
+ * matches if *either* field matches. When only one is restricted, only
+ * that field is checked.
  */
 export function shouldFireAt(cronExpression: string, date: Date): boolean {
   const parsed = parseCron(cronExpression);
-  return (
-    parsed.minutes.includes(date.getUTCMinutes()) &&
-    parsed.hours.includes(date.getUTCHours()) &&
-    parsed.daysOfMonth.includes(date.getUTCDate()) &&
-    parsed.months.includes(date.getUTCMonth() + 1) &&
-    parsed.daysOfWeek.includes(date.getUTCDay())
-  );
+
+  if (
+    !parsed.minutes.includes(date.getUTCMinutes()) ||
+    !parsed.hours.includes(date.getUTCHours()) ||
+    !parsed.months.includes(date.getUTCMonth() + 1)
+  ) {
+    return false;
+  }
+
+  // Vixie-cron OR semantics: when both day-of-month and day-of-week are
+  // restricted (neither is the full wildcard range), match if either matches.
+  const domRestricted = parsed.daysOfMonth.length < 31;
+  const dowRestricted = parsed.daysOfWeek.length < 7;
+  const domMatch = parsed.daysOfMonth.includes(date.getUTCDate());
+  const dowMatch = parsed.daysOfWeek.includes(date.getUTCDay());
+
+  if (domRestricted && dowRestricted) {
+    return domMatch || dowMatch;
+  }
+  return domMatch && dowMatch;
 }
 
 /**

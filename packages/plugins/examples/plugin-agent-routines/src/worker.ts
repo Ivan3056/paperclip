@@ -41,9 +41,9 @@ const plugin = definePlugin({
           continue;
         }
 
-        if (!shouldFireAt(routine.cronExpression, now)) continue;
-
         try {
+          if (!shouldFireAt(routine.cronExpression, now)) continue;
+
           const result = await ctx.agents.invoke(routine.agentId, routine.companyId, {
             prompt: routine.prompt,
             reason: `Scheduled routine: ${routine.name}`,
@@ -70,17 +70,23 @@ const plugin = definePlugin({
             error: message,
           });
 
-          await ctx.activity.log({
-            companyId: routine.companyId,
-            message: `Routine "${routine.name}" failed to invoke agent ${routine.agentId}: ${message}`,
-            entityType: "agent",
-            entityId: routine.agentId,
-          });
+          try {
+            await ctx.activity.log({
+              companyId: routine.companyId,
+              message: `Routine "${routine.name}" failed to invoke agent ${routine.agentId}: ${message}`,
+              entityType: "agent",
+              entityId: routine.agentId,
+            });
 
-          await ctx.metrics.write("routine_invocation_total", 1, {
-            routine: routine.name,
-            status: "error",
-          });
+            await ctx.metrics.write("routine_invocation_total", 1, {
+              routine: routine.name,
+              status: "error",
+            });
+          } catch (telemetryErr) {
+            ctx.logger.error(`Failed to write telemetry for routine "${routine.name}"`, {
+              error: telemetryErr instanceof Error ? telemetryErr.message : String(telemetryErr),
+            });
+          }
 
           errors++;
         }
