@@ -36,6 +36,15 @@ import {
   agentConfigurationDoc as openCodeAgentConfigurationDoc,
 } from "@paperclipai/adapter-opencode-local";
 import {
+  agentConfigurationDoc as kiloCodeAgentConfigurationDoc,
+} from "@paperclipai/adapter-kilocode-local";
+import {
+  execute as kiloCodeExecute,
+  testEnvironment as kiloCodeTestEnvironment,
+  sessionCodec as kiloCodeSessionCodec,
+  listKiloCodeModels,
+} from "@paperclipai/adapter-kilocode-local/server";
+import {
   execute as openclawGatewayExecute,
   testEnvironment as openclawGatewayTestEnvironment,
 } from "@paperclipai/adapter-openclaw-gateway/server";
@@ -135,6 +144,18 @@ const openCodeLocalAdapter: ServerAdapterModule = {
   agentConfigurationDoc: openCodeAgentConfigurationDoc,
 };
 
+const kiloCodeLocalAdapter: ServerAdapterModule = {
+  type: "kilocode_local",
+  execute: kiloCodeExecute,
+  testEnvironment: kiloCodeTestEnvironment,
+  sessionCodec: kiloCodeSessionCodec,
+  sessionManagement: getAdapterSessionManagement("kilocode_local") ?? undefined,
+  models: [],
+  listModels: listKiloCodeModels,
+  supportsLocalAgentJwt: true,
+  agentConfigurationDoc: kiloCodeAgentConfigurationDoc,
+};
+
 const piLocalAdapter: ServerAdapterModule = {
   type: "pi_local",
   execute: piExecute,
@@ -162,6 +183,7 @@ const adaptersByType = new Map<string, ServerAdapterModule>(
     claudeLocalAdapter,
     codexLocalAdapter,
     openCodeLocalAdapter,
+    kiloCodeLocalAdapter,
     piLocalAdapter,
     cursorLocalAdapter,
     geminiLocalAdapter,
