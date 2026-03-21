@@ -594,7 +594,7 @@ test.describe("Adapter switch field preservation (API-level)", () => {
     instructionsFilePath: "/tmp/adapter-switch-test/AGENTS.md",
     command: "custom-cli",
     extraArgs: "--verbose",
-    env: [{ key: "FOO", value: "bar" }],
+    env: { FOO: "bar" },
     timeoutSec: 120,
     graceSec: 30,
   };
