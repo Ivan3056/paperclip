@@ -1,15 +1,15 @@
 import type { TranscriptEntry } from "./types.js";
 
-export const REDACTED_HOME_PATH_USER = "[]";
+export const REDACTED_HOME_PATH_USER = "~";
 
 const HOME_PATH_PATTERNS = [
   {
     regex: /\/Users\/[^/\\\s]+/g,
-    replace: `/Users/${REDACTED_HOME_PATH_USER}`,
+    replace: REDACTED_HOME_PATH_USER,
   },
   {
     regex: /\/home\/[^/\\\s]+/g,
-    replace: `/home/${REDACTED_HOME_PATH_USER}`,
+    replace: REDACTED_HOME_PATH_USER,
   },
   {
     regex: /([A-Za-z]:\\Users\\)[^\\/\s]+/g,
