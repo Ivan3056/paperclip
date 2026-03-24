@@ -2787,7 +2787,7 @@ export function heartbeatService(db: Db) {
           logger.error({ err: outerErr, runId }, "heartbeat execution setup failed");
           await setRunStatus(runId, "failed", {
             error: message,
-            errorCode: "adapter_failed",
+            errorCode: "setup_failed",
             finishedAt: new Date(),
           }).catch(() => undefined);
           await setWakeupStatus(run.wakeupRequestId, "failed", {
