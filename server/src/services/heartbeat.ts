@@ -294,7 +294,7 @@ async function getConsecutiveFailureCount(db: Db, agentId: string): Promise<numb
 
   let count = 0;
   for (const run of recentRuns) {
-    if (run.status === "failed") count++;
+    if (run.status === "failed" || run.status === "timed_out") count++;
     else break;
   }
   return count;
@@ -2805,18 +2805,45 @@ export function heartbeatService(db: Db) {
       }
       await finalizeAgentStatus(agent.id, outcome);
 
+      // Self-wake if agent has remaining actionable inbox items.
+      // Skip for timer-only heartbeats to avoid converting idle polls into tight loops.
+      if (shouldSelfWake(outcome, adapterResult.errorCode) && run.invocationSource !== "timer") {
+        void (async () => {
+          try {
+            logger.info({ agentId: agent.id, runId: run.id }, "Enqueueing self-wake for remaining inbox items");
+            await enqueueWakeup(agent.id, {
+              source: "automation",
+              triggerDetail: "system",
+              reason: "inbox_remaining",
+              payload: { completedRunId: run.id },
+              requestedByActorType: "system",
+              requestedByActorId: null,
+              contextSnapshot: { source: "heartbeat.inbox_remaining" },
+            });
+          } catch (err) {
+            const level = err instanceof Error && "statusCode" in err && (err as { statusCode?: number }).statusCode === 409 ? "debug" : "warn";
+            logger[level]({ err, agentId: agent.id, runId: run.id }, "failed to self-wake for remaining inbox");
+          }
+        })();
+      }
+
       // Post quality summary comment on the issue for audit trail.
       const runIssueId = readNonEmptyString(run.contextSnapshot?.issueId);
       if (runIssueId && run.invocationSource !== "timer") {
+        // Use the run's actual finishedAt (set by setRunStatus) to avoid
+        // inflating duration with async post-processing time.
+        const actualFinishedAt = finalizedRun?.finishedAt
+          ? new Date(finalizedRun.finishedAt)
+          : new Date();
         const qualityScore = computeRunQualityScore({
           outcome,
           startedAt: run.startedAt ? new Date(run.startedAt) : null,
-          finishedAt: new Date(),
+          finishedAt: actualFinishedAt,
           exitCode: adapterResult.exitCode,
           invocationSource: run.invocationSource,
           issueId: runIssueId,
         });
-        const durationMs = run.startedAt ? Date.now() - new Date(run.startedAt).getTime() : 0;
+        const durationMs = run.startedAt ? actualFinishedAt.getTime() - new Date(run.startedAt).getTime() : 0;
         const durationStr = durationMs > 0 ? `${(durationMs / 60000).toFixed(1)} min` : "unknown";
         const statusEmoji = outcome === "succeeded" ? "\u2705" : outcome === "failed" ? "\u274c" : "\u26a0\ufe0f";
         void db.insert(issueComments).values({
@@ -3197,6 +3224,18 @@ export function heartbeatService(db: Db) {
         await db.update(agents).set({ status: "paused", updatedAt: new Date() }).where(eq(agents.id, agentId));
         publishLiveEvent({ companyId: agent.companyId, type: "agent.status", payload: { agentId, status: "paused" } });
         await writeSkippedRequest("circuit_breaker_open");
+        // Post a durable comment on the active issue so the operator knows why
+        // the agent was paused — avoids silent failures invisible in the UI.
+        const issueIdForCircuitBreaker = readNonEmptyString(enrichedContextSnapshot.issueId);
+        if (issueIdForCircuitBreaker) {
+          void db.insert(issueComments).values({
+            companyId: agent.companyId,
+            issueId: issueIdForCircuitBreaker,
+            authorAgentId: agent.id,
+            authorUserId: null,
+            body: `\u26a0\ufe0f **Agent auto-paused** — circuit breaker tripped after ${consecutiveFailures} consecutive failures. Resolve the underlying issue and manually resume the agent.`,
+          }).catch(() => undefined);
+        }
         return null;
       }
 
