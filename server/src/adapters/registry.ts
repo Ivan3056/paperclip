@@ -70,6 +70,8 @@ import {
   execute as hermesExecute,
   testEnvironment as hermesTestEnvironment,
   sessionCodec as hermesSessionCodec,
+  listSkills as hermesListSkills,
+  syncSkills as hermesSyncSkills,
 } from "@henkey/hermes-paperclip-adapter/server";
 import {
   agentConfigurationDoc as hermesAgentConfigurationDoc,
@@ -176,6 +178,8 @@ const hermesLocalAdapter: ServerAdapterModule = {
   execute: hermesExecute,
   testEnvironment: hermesTestEnvironment,
   sessionCodec: hermesSessionCodec,
+  listSkills: hermesListSkills,
+  syncSkills: hermesSyncSkills,
   models: hermesModels,
   supportsLocalAgentJwt: true,
   agentConfigurationDoc: hermesAgentConfigurationDoc,

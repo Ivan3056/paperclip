@@ -2369,6 +2369,7 @@ function AgentSkillsTab({
   const queryClient = useQueryClient();
   const [skillDraft, setSkillDraft] = useState<string[]>([]);
   const [lastSavedSkills, setLastSavedSkills] = useState<string[]>([]);
+  const [unmanagedOpen, setUnmanagedOpen] = useState(false);
   const lastSavedSkillsRef = useRef<string[]>([]);
   const hasHydratedSkillSnapshotRef = useRef(false);
   const skipNextSkillAutosaveRef = useRef(true);
@@ -2698,12 +2699,19 @@ function AgentSkillsTab({
 
                 {unmanagedSkillRows.length > 0 && (
                   <section className="border-y border-border">
-                    <div className="border-b border-border bg-muted/40 px-3 py-2">
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      className="flex cursor-pointer items-center gap-2 border-b border-border bg-muted/40 px-3 py-2 select-none"
+                      onClick={() => setUnmanagedOpen((v) => !v)}
+                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setUnmanagedOpen((v) => !v); } }}
+                    >
                       <span className="text-xs font-medium text-muted-foreground">
-                        User-installed skills, not managed by Paperclip
+                        ({unmanagedSkillRows.length}) User-installed skills, not managed by Paperclip
                       </span>
+                      {unmanagedOpen ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
                     </div>
-                    {unmanagedSkillRows.map(renderSkillRow)}
+                    {unmanagedOpen && unmanagedSkillRows.map(renderSkillRow)}
                   </section>
                 )}
               </>
