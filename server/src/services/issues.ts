@@ -1310,11 +1310,11 @@ export function issueService(db: Db) {
             ? or(
                 gt(issueComments.createdAt, anchor.createdAt),
                 and(eq(issueComments.createdAt, anchor.createdAt), gt(issueComments.id, anchor.id)),
-              )
+              )!
             : or(
                 lt(issueComments.createdAt, anchor.createdAt),
                 and(eq(issueComments.createdAt, anchor.createdAt), lt(issueComments.id, anchor.id)),
-              ),
+              )!,
         );
       }
 
