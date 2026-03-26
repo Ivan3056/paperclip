@@ -281,6 +281,36 @@ describe("issueService.list participantAgentId", () => {
 
     expect(result.map((issue) => issue.id)).toEqual([matchedIssueId]);
   });
+});
+
+describe("issueService.listComments", () => {
+  let db!: ReturnType<typeof createDb>;
+  let svc!: ReturnType<typeof issueService>;
+  let instance: EmbeddedPostgresInstance | null = null;
+  let dataDir = "";
+
+  beforeAll(async () => {
+    const started = await startTempDatabase();
+    db = createDb(started.connectionString);
+    svc = issueService(db);
+    instance = started.instance;
+    dataDir = started.dataDir;
+  }, 20_000);
+
+  afterEach(async () => {
+    await db.delete(issueComments);
+    await db.delete(activityLog);
+    await db.delete(issues);
+    await db.delete(agents);
+    await db.delete(companies);
+  });
+
+  afterAll(async () => {
+    await instance?.stop();
+    if (dataDir) {
+      fs.rmSync(dataDir, { recursive: true, force: true });
+    }
+  });
 
   it("lists comments after a cursor in ascending order", async () => {
     const companyId = randomUUID();
