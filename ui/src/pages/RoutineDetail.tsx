@@ -193,6 +193,9 @@ function TriggerEditor({
             <div className="space-y-1.5">
               <Label className="text-xs">Replay window (seconds)</Label>
               <Input
+                type="number"
+                min={0}
+                step={1}
                 value={draft.replayWindowSec}
                 onChange={(event) => setDraft((current) => ({ ...current, replayWindowSec: event.target.value }))}
               />
@@ -927,7 +930,7 @@ export function RoutineDetail() {
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs">Replay window (seconds)</Label>
-                    <Input value={newTrigger.replayWindowSec} onChange={(event) => setNewTrigger((current) => ({ ...current, replayWindowSec: event.target.value }))} />
+                    <Input type="number" min={0} step={1} value={newTrigger.replayWindowSec} onChange={(event) => setNewTrigger((current) => ({ ...current, replayWindowSec: event.target.value }))} />
                   </div>
                 </>
               )}

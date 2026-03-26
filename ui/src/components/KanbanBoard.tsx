@@ -84,6 +84,11 @@ function KanbanColumn({
           items={issues.map((i) => i.id)}
           strategy={verticalListSortingStrategy}
         >
+          {issues.length === 0 && (
+            <p className="text-xs text-muted-foreground/40 text-center py-8">
+              No issues
+            </p>
+          )}
           {issues.map((issue) => (
             <KanbanCard
               key={issue.id}
