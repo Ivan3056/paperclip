@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { pickTextColorForPillBg } from "@/lib/color-contrast";
 import { useDialog } from "../context/DialogContext";
 import { useCompany } from "../context/CompanyContext";
+import { useToast } from "../context/ToastContext";
 import { issuesApi } from "../api/issues";
 import { authApi } from "../api/auth";
 import { queryKeys } from "../lib/queryKeys";
@@ -21,7 +22,7 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
-import { CircleDot, Plus, Filter, ArrowUpDown, Layers, Check, X, ChevronRight, List, Columns3, User, Search } from "lucide-react";
+import { CircleDot, Plus, Filter, ArrowUpDown, Layers, Check, X, ChevronRight, List, Columns3, User, Search, Trash2, Archive, CheckCheck, MoreHorizontal } from "lucide-react";
 import { KanbanBoard } from "./KanbanBoard";
 import type { Issue } from "@paperclipai/shared";
 
@@ -192,6 +193,8 @@ export function IssuesList({
 }: IssuesListProps) {
   const { selectedCompanyId } = useCompany();
   const { openNewIssue } = useDialog();
+  const { pushToast } = useToast();
+  const queryClient = useQueryClient();
   const { data: session } = useQuery({
     queryKey: queryKeys.auth.session,
     queryFn: () => authApi.getSession(),
@@ -211,6 +214,8 @@ export function IssuesList({
   const [assigneeSearch, setAssigneeSearch] = useState("");
   const [issueSearch, setIssueSearch] = useState(initialSearch ?? "");
   const [debouncedIssueSearch, setDebouncedIssueSearch] = useState(issueSearch);
+  const [selectedIssueIds, setSelectedIssueIds] = useState<Set<string>>(new Set());
+  const [showBulkActions, setShowBulkActions] = useState(false);
   const normalizedIssueSearch = debouncedIssueSearch.trim();
 
   useEffect(() => {
@@ -324,14 +329,148 @@ export function IssuesList({
     setAssigneeSearch("");
   };
 
+  // Bulk actions
+  const deleteIssue = useMutation({
+    mutationFn: (id: string) => issuesApi.remove(id),
+    onSuccess: (_data, id) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.issues.list(selectedCompanyId!) });
+      setSelectedIssueIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    },
+    onError: (err: Error) => {
+      pushToast({ title: "Failed to delete issue", body: err.message ?? "Something went wrong.", tone: "error" });
+    },
+  });
+
+  const bulkDelete = useCallback(() => {
+    selectedIssueIds.forEach((id) => deleteIssue.mutate(id));
+    setSelectedIssueIds(new Set());
+    setShowBulkActions(false);
+  }, [selectedIssueIds, deleteIssue]);
+
+  const bulkUpdateStatus = useCallback((status: string) => {
+    selectedIssueIds.forEach((id) => {
+      onUpdateIssue(id, { status });
+    });
+    setSelectedIssueIds(new Set());
+    setShowBulkActions(false);
+  }, [selectedIssueIds, onUpdateIssue]);
+
+  const deleteCompletedIssues = useCallback(() => {
+    const completedIds = filtered
+      .filter((issue) => issue.status === "done" || issue.status === "cancelled")
+      .map((issue) => issue.id);
+
+    if (completedIds.length === 0) {
+      pushToast({ title: "No completed issues", body: "There are no completed or cancelled issues to delete.", tone: "info" });
+      return;
+    }
+
+    const confirmed = window.confirm(`Delete ${completedIds.length} completed/cancelled issue(s)? This action cannot be undone.`);
+    if (!confirmed) return;
+
+    completedIds.forEach((id) => deleteIssue.mutate(id));
+  }, [filtered, deleteIssue, pushToast]);
+
+  const toggleSelectIssue = useCallback((issueId: string) => {
+    setSelectedIssueIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(issueId)) {
+        next.delete(issueId);
+      } else {
+        next.add(issueId);
+      }
+      return next;
+    });
+  }, []);
+
+  const toggleSelectAll = useCallback(() => {
+    if (selectedIssueIds.size === filtered.length) {
+      setSelectedIssueIds(new Set());
+    } else {
+      setSelectedIssueIds(new Set(filtered.map((i) => i.id)));
+    }
+  }, [filtered, selectedIssueIds]);
+
+  const clearSelection = useCallback(() => {
+    setSelectedIssueIds(new Set());
+    setShowBulkActions(false);
+  }, []);
+
   return (
     <div className="space-y-4">
+      {/* Bulk Actions Bar */}
+      {selectedIssueIds.size > 0 && (
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-accent/50 p-3 animate-in fade-in slide-in-from-top-2">
+          <div className="flex items-center gap-3">
+            <Checkbox
+              checked={selectedIssueIds.size === filtered.length && filtered.length > 0}
+              onCheckedChange={toggleSelectAll}
+            />
+            <span className="text-sm font-medium">
+              {selectedIssueIds.size} issue{selectedIssueIds.size > 1 ? "s" : ""} selected
+            </span>
+          </div>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => bulkUpdateStatus("todo")}
+              disabled={deleteIssue.isPending}
+            >
+              <CircleDot className="mr-1.5 h-3.5 w-3.5" />
+              Set To Do
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => bulkUpdateStatus("done")}
+              disabled={deleteIssue.isPending}
+            >
+              <CheckCheck className="mr-1.5 h-3.5 w-3.5" />
+              Mark Done
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={bulkDelete}
+              disabled={deleteIssue.isPending}
+              className="text-destructive hover:text-destructive"
+            >
+              <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+              Delete
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={clearSelection}
+              disabled={deleteIssue.isPending}
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* Toolbar */}
       <div className="flex items-center justify-between gap-2 sm:gap-3">
         <div className="flex min-w-0 items-center gap-2 sm:gap-3">
           <Button size="sm" variant="outline" onClick={() => openNewIssue(newIssueDefaults())}>
             <Plus className="h-4 w-4 sm:mr-1" />
             <span className="hidden sm:inline">New Issue</span>
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={deleteCompletedIssues}
+            disabled={deleteIssue.isPending}
+            className="text-destructive hover:text-destructive hover:bg-destructive/10"
+          >
+            <Archive className="h-4 w-4 sm:mr-1" />
+            <span className="hidden sm:inline">Delete Completed</span>
           </Button>
           <div className="relative w-48 sm:w-64 md:w-80">
             <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -672,6 +811,8 @@ export function IssuesList({
                   key={issue.id}
                   issue={issue}
                   issueLinkState={issueLinkState}
+                  isSelected={selectedIssueIds.has(issue.id)}
+                  onToggleSelect={toggleSelectIssue}
                   desktopLeadingSpacer
                   mobileLeading={(
                     <span

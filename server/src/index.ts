@@ -26,6 +26,7 @@ import { createApp } from "./app.js";
 import { loadConfig } from "./config.js";
 import { logger } from "./middleware/logger.js";
 import { setupLiveEventsWebSocketServer } from "./realtime/live-events-ws.js";
+import { attachConsoleWebSocket } from "./routes/console.js";
 import { heartbeatService, reconcilePersistedRuntimeServicesOnStartup, routineService } from "./services/index.js";
 import { createStorageServiceFromConfig } from "./storage/index.js";
 import { printStartupBanner } from "./startup-banner.js";
@@ -548,6 +549,8 @@ export async function startServer(): Promise<StartedServer> {
     bindHost: config.host,
     resolveSessionFromHeaders,
   });
+
+  attachConsoleWebSocket(server);
 
   void reconcilePersistedRuntimeServicesOnStartup(db as any)
     .then((result) => {

@@ -35,6 +35,8 @@ export function IssueRow({
   unreadState = null,
   onMarkRead,
   className,
+  isSelected,
+  onToggleSelect,
 }: IssueRowProps) {
   const issuePathId = issue.identifier ?? issue.id;
   const identifier = issue.identifier ?? issue.id.slice(0, 8);
@@ -42,45 +44,62 @@ export function IssueRow({
   const showUnreadDot = unreadState === "visible" || unreadState === "fading";
 
   return (
-    <Link
-      to={`/issues/${issuePathId}`}
-      state={issueLinkState}
+    <div
       className={cn(
         "flex items-start gap-2 border-b border-border py-2.5 pl-2 pr-3 text-sm no-underline text-inherit transition-colors hover:bg-accent/50 last:border-b-0 sm:items-center sm:py-2 sm:pl-1",
+        isSelected && "bg-accent/70 hover:bg-accent",
         className,
       )}
     >
-      <span className="shrink-0 pt-px sm:hidden">
-        {mobileLeading ?? <StatusIcon status={issue.status} />}
-      </span>
-      <span className="flex min-w-0 flex-1 flex-col gap-1 sm:contents">
-        <span className="line-clamp-2 text-sm sm:order-2 sm:min-w-0 sm:flex-1 sm:truncate sm:line-clamp-none">
-          {issue.title}
+      {onToggleSelect && (
+        <span className="flex items-center pt-px sm:self-center" onClick={(e) => e.stopPropagation()}>
+          <Checkbox
+            checked={isSelected}
+            onCheckedChange={() => onToggleSelect(issue.id)}
+            className="h-4 w-4"
+          />
         </span>
-        <span className="flex items-center gap-2 sm:order-1 sm:shrink-0">
-          {desktopLeadingSpacer ? (
-            <span className="hidden w-3.5 shrink-0 sm:block" />
-          ) : null}
-          {desktopMetaLeading ?? (
-            <>
-              <span className="hidden shrink-0 sm:inline-flex">
-                <StatusIcon status={issue.status} />
-              </span>
-              <span className="shrink-0 font-mono text-xs text-muted-foreground">
-                {identifier}
-              </span>
-            </>
-          )}
-          {mobileMeta ? (
-            <>
-              <span className="text-xs text-muted-foreground sm:hidden" aria-hidden="true">
-                &middot;
-              </span>
-              <span className="text-xs text-muted-foreground sm:hidden">{mobileMeta}</span>
-            </>
-          ) : null}
+      )}
+      <Link
+        to={`/issues/${issuePathId}`}
+        state={issueLinkState}
+        className={cn(
+          "flex items-start gap-2 py-2.5 text-sm no-underline text-inherit transition-colors hover:bg-accent/50 last:border-b-0 sm:items-center sm:py-2",
+          className,
+        )}
+      >
+        <span className="shrink-0 pt-px sm:hidden">
+          {mobileLeading ?? <StatusIcon status={issue.status} />}
         </span>
-      </span>
+        <span className="flex min-w-0 flex-1 flex-col gap-1 sm:contents">
+          <span className="line-clamp-2 text-sm sm:order-2 sm:min-w-0 sm:flex-1 sm:truncate sm:line-clamp-none">
+            {issue.title}
+          </span>
+          <span className="flex items-center gap-2 sm:order-1 sm:shrink-0">
+            {desktopLeadingSpacer ? (
+              <span className="hidden w-3.5 shrink-0 sm:block" />
+            ) : null}
+            {desktopMetaLeading ?? (
+              <>
+                <span className="hidden shrink-0 sm:inline-flex">
+                  <StatusIcon status={issue.status} />
+                </span>
+                <span className="shrink-0 font-mono text-xs text-muted-foreground">
+                  {identifier}
+                </span>
+              </>
+            )}
+            {mobileMeta ? (
+              <>
+                <span className="text-xs text-muted-foreground sm:hidden" aria-hidden="true">
+                  &middot;
+                </span>
+                <span className="text-xs text-muted-foreground sm:hidden">{mobileMeta}</span>
+              </>
+            ) : null}
+          </span>
+        </span>
+      </Link>
       {(desktopTrailing || trailingMeta) ? (
         <span className="ml-auto hidden shrink-0 items-center gap-2 sm:order-3 sm:flex sm:gap-3">
           {desktopTrailing}
@@ -121,6 +140,6 @@ export function IssueRow({
           )}
         </span>
       ) : null}
-    </Link>
+    </div>
   );
 }

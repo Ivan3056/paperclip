@@ -1,16 +1,17 @@
 import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { Link, useNavigate } from "@/lib/router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { agentsApi, type OrgNode } from "../api/agents";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
+import { useToast } from "../context/ToastContext";
 import { queryKeys } from "../lib/queryKeys";
 import { agentUrl } from "../lib/utils";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "../components/EmptyState";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { AgentIcon } from "../components/AgentIconPicker";
-import { Download, Network, Upload } from "lucide-react";
+import { Download, Network, Upload, LayoutDashboard, FileText, Wrench, Settings, Activity, CreditCard, Trash2 } from "lucide-react";
 import { AGENT_ROLE_LABELS, type Agent } from "@paperclipai/shared";
 
 // Layout constants
@@ -189,6 +190,13 @@ export function OrgChart() {
   const [dragging, setDragging] = useState(false);
   const dragStart = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
 
+  // Context menu state
+  const [contextMenuAgent, setContextMenuAgent] = useState<{ id: string; name: string } | null>(null);
+  const [contextMenuOpen, setContextMenuOpen] = useState(false);
+  const [contextMenuPosition, setContextMenuPosition] = useState({ x: 0, y: 0 });
+  const queryClient = useQueryClient();
+  const { pushToast } = useToast();
+
   // Center the chart on first load
   const hasInitialized = useRef(false);
   useEffect(() => {
@@ -254,6 +262,67 @@ export function OrgChart() {
     });
     setZoom(newZoom);
   }, [zoom, pan]);
+
+  // Context menu handlers
+  const handleContextMenu = useCallback((e: React.MouseEvent, agentId: string, agentName: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenuAgent({ id: agentId, name: agentName });
+    setContextMenuPosition({ x: e.clientX, y: e.clientY });
+    setContextMenuOpen(true);
+  }, []);
+
+  const handleMenuAction = useCallback((action: string) => {
+    if (!contextMenuAgent) return;
+
+    switch (action) {
+      case "dashboard":
+        navigate(`/agents/${contextMenuAgent.id}`);
+        break;
+      case "instructions":
+        navigate(`/agents/${contextMenuAgent.id}/instructions`);
+        break;
+      case "skills":
+        navigate(`/agents/${contextMenuAgent.id}/skills`);
+        break;
+      case "configuration":
+        navigate(`/agents/${contextMenuAgent.id}/configure`);
+        break;
+      case "runs":
+        navigate(`/agents/${contextMenuAgent.id}/runs`);
+        break;
+      case "budget":
+        navigate(`/agents/${contextMenuAgent.id}/budget`);
+        break;
+      case "delete":
+        handleDelete(contextMenuAgent.id, contextMenuAgent.name);
+        break;
+    }
+  }, [contextMenuAgent, navigate]);
+
+  const handleDelete = useCallback(async (agentId: string, agentName: string) => {
+    const confirmed = window.confirm(`Are you sure you want to delete "${agentName}"? This action cannot be undone.`);
+    if (!confirmed) return;
+
+    try {
+      await agentsApi.remove(agentId, selectedCompanyId!);
+      pushToast({
+        title: "Agent deleted",
+        body: `"${agentName}" has been deleted successfully.`,
+        tone: "success",
+      });
+      queryClient.invalidateQueries({ queryKey: queryKeys.org(selectedCompanyId!) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.list(selectedCompanyId!) });
+      setContextMenuOpen(false);
+      setContextMenuAgent(null);
+    } catch (error) {
+      pushToast({
+        title: "Failed to delete agent",
+        body: error instanceof Error ? error.message : "An unknown error occurred",
+        tone: "error",
+      });
+    }
+  }, [selectedCompanyId, queryClient, pushToast]);
 
   if (!selectedCompanyId) {
     return <EmptyState icon={Network} message="Select a company to view the org chart." />;
@@ -406,6 +475,7 @@ export function OrgChart() {
               }}
               onClick={() => navigate(agent ? agentUrl(agent) : `/agents/${node.id}`)}
               onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); navigate(agent ? agentUrl(agent) : `/agents/${node.id}`); } }}
+              onContextMenu={(e) => handleContextMenu(e, node.id, node.name)}
             >
               <div className="flex items-center px-4 py-3 gap-3">
                 {/* Agent icon + status dot */}
@@ -437,6 +507,109 @@ export function OrgChart() {
           );
         })}
       </div>
+
+      {/* Context menu */}
+      {selectedCompanyId && contextMenuAgent && contextMenuOpen && (
+        <div
+          className="fixed z-50 bg-popover text-popover-foreground border border-border rounded-md shadow-lg py-1 min-w-[180px]"
+          style={{
+            left: contextMenuPosition.x,
+            top: contextMenuPosition.y,
+          }}
+          role="menu"
+        >
+          <button
+            className="w-full px-2 py-1.5 text-sm text-left hover:bg-accent flex items-center gap-2"
+            onClick={() => {
+              handleMenuAction("dashboard");
+              setContextMenuOpen(false);
+            }}
+            role="menuitem"
+          >
+            <LayoutDashboard className="h-4 w-4" />
+            Dashboard
+          </button>
+          <button
+            className="w-full px-2 py-1.5 text-sm text-left hover:bg-accent flex items-center gap-2"
+            onClick={() => {
+              handleMenuAction("instructions");
+              setContextMenuOpen(false);
+            }}
+            role="menuitem"
+          >
+            <FileText className="h-4 w-4" />
+            Instructions
+          </button>
+          <button
+            className="w-full px-2 py-1.5 text-sm text-left hover:bg-accent flex items-center gap-2"
+            onClick={() => {
+              handleMenuAction("skills");
+              setContextMenuOpen(false);
+            }}
+            role="menuitem"
+          >
+            <Wrench className="h-4 w-4" />
+            Skills
+          </button>
+          <button
+            className="w-full px-2 py-1.5 text-sm text-left hover:bg-accent flex items-center gap-2"
+            onClick={() => {
+              handleMenuAction("configuration");
+              setContextMenuOpen(false);
+            }}
+            role="menuitem"
+          >
+            <Settings className="h-4 w-4" />
+            Configuration
+          </button>
+          <button
+            className="w-full px-2 py-1.5 text-sm text-left hover:bg-accent flex items-center gap-2"
+            onClick={() => {
+              handleMenuAction("runs");
+              setContextMenuOpen(false);
+            }}
+            role="menuitem"
+          >
+            <Activity className="h-4 w-4" />
+            Runs
+          </button>
+          <button
+            className="w-full px-2 py-1.5 text-sm text-left hover:bg-accent flex items-center gap-2"
+            onClick={() => {
+              handleMenuAction("budget");
+              setContextMenuOpen(false);
+            }}
+            role="menuitem"
+          >
+            <CreditCard className="h-4 w-4" />
+            Budget
+          </button>
+          <div className="h-px bg-border my-1" />
+          <button
+            className="w-full px-2 py-1.5 text-sm text-left hover:bg-destructive/10 hover:text-destructive flex items-center gap-2 text-destructive"
+            onClick={() => {
+              handleMenuAction("delete");
+              setContextMenuOpen(false);
+            }}
+            role="menuitem"
+          >
+            <Trash2 className="h-4 w-4" />
+            Delete
+          </button>
+        </div>
+      )}
+
+      {/* Backdrop to close context menu */}
+      {contextMenuOpen && (
+        <div
+          className="fixed inset-0 z-40"
+          onClick={() => setContextMenuOpen(false)}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            setContextMenuOpen(false);
+          }}
+        />
+      )}
     </div>
     </div>
   );
