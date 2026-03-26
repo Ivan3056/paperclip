@@ -51,6 +51,7 @@ import {
   Terminal,
   Sparkles,
   MousePointer2,
+  Globe,
   Check,
   Loader2,
   ChevronDown,
@@ -841,6 +842,12 @@ export function OnboardingWizard() {
                             label: "Cursor",
                             icon: MousePointer2,
                             desc: "Local Cursor agent"
+                          },
+                          {
+                            value: "http" as const,
+                            label: "HTTP Webhook",
+                            icon: Globe,
+                            desc: "Send heartbeats to any HTTP endpoint"
                           },
                           {
                             value: "openclaw_gateway" as const,
