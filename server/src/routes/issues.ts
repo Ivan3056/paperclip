@@ -1017,6 +1017,35 @@ export function issueRoutes(db: Db, storage: StorageService) {
         }
       }
 
+      // Wake the issue creator (manager) when a worker moves the issue to review or done.
+      // This ensures the manager gets notified without polling.
+      const statusMovedToReviewOrDone =
+        req.body.status !== undefined &&
+        (issue.status === "in_review" || issue.status === "done") &&
+        existing.status !== issue.status;
+
+      if (
+        statusMovedToReviewOrDone &&
+        existing.createdByAgentId &&
+        existing.createdByAgentId !== (actor.actorType === "agent" ? actor.actorId : null) &&
+        !wakeups.has(existing.createdByAgentId)
+      ) {
+        wakeups.set(existing.createdByAgentId, {
+          source: "automation",
+          triggerDetail: "system",
+          reason: "issue_status_review",
+          payload: {
+            issueId: issue.id,
+            newStatus: issue.status,
+            previousStatus: existing.status,
+            identifier: issue.identifier,
+          },
+          requestedByActorType: actor.actorType,
+          requestedByActorId: actor.actorId,
+          contextSnapshot: { issueId: issue.id, source: "issue.status_review" },
+        });
+      }
+
       for (const [agentId, wakeup] of wakeups.entries()) {
         heartbeat
           .wakeup(agentId, wakeup)
