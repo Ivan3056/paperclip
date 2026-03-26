@@ -40,7 +40,7 @@
     "@paperclipai/adapter-opencode-local": "workspace:*",
     "@paperclipai/adapter-pi-local": "workspace:*",
     "@paperclipai/adapter-utils": "workspace:*",
-    "@henkey/hermes-paperclip-adapter": "file:/mnt/e/Projects/AI/paperclip/hermes-paperclip-adapter",
+    "@paperclipai/adapter-hermes-local": "workspace:*",
     "@paperclipai/shared": "workspace:*",
     "@radix-ui/react-slot": "^1.2.4",
     "@tailwindcss/typography": "^0.5.19",

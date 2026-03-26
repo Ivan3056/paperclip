@@ -72,12 +72,12 @@ import {
   sessionCodec as hermesSessionCodec,
   listSkills as hermesListSkills,
   syncSkills as hermesSyncSkills,
-} from "@henkey/hermes-paperclip-adapter/server";
+} from "@paperclipai/adapter-hermes-local/server";
 import {
   agentConfigurationDoc as hermesAgentConfigurationDoc,
   models as hermesModels,
-} from "@henkey/hermes-paperclip-adapter";
-import { detectModel as detectModelFromHermes } from "@henkey/hermes-paperclip-adapter/server";
+} from "@paperclipai/adapter-hermes-local";
+import { detectModel as detectModelFromHermes } from "@paperclipai/adapter-hermes-local/server";
 import { processAdapter } from "./process/index.js";
 import { httpAdapter } from "./http/index.js";
 
@@ -189,7 +189,7 @@ const hermesLocalAdapter: ServerAdapterModule & {
   detectModel: () => detectModelFromHermes(),
 };
 
-const adaptersByType = new Map<string, ServerAdapterModule>(
+const adaptersByType = new Map<string, ServerAdapterModule & { detectModel?: () => Promise<{ model: string; provider: string; source: string } | null> }>(
   [
     claudeLocalAdapter,
     codexLocalAdapter,
