@@ -117,6 +117,13 @@ export function Sidebar() {
           <SidebarNavItem to="/costs" label="Costs" icon={DollarSign} />
           <SidebarNavItem to="/activity" label="Activity" icon={History} />
           <SidebarNavItem to="/company/settings" label="Settings" icon={Settings} />
+          <button
+            onClick={() => toggleConsole()}
+            className="flex items-center gap-2.5 px-3 py-2 text-[13px] font-medium text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors w-full text-left"
+          >
+            <Terminal className="h-4 w-4 shrink-0" />
+            <span className="truncate">Terminal</span>
+          </button>
         </SidebarSection>
 
         <PluginSlotOutlet

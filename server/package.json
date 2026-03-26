@@ -33,7 +33,7 @@
   ],
   "scripts": {
     "dev": "tsx src/index.ts",
-    "dev:watch": "cross-env PAPERCLIP_MIGRATION_PROMPT=never PAPERCLIP_MIGRATION_AUTO_APPLY=true tsx watch --ignore ../ui/node_modules --ignore ../ui/.vite --ignore ../ui/dist src/index.ts",
+    "dev:watch": "cross-env PAPERCLIP_MIGRATION_PROMPT=never PAPERCLIP_MIGRATION_AUTO_APPLY=true tsx ./scripts/dev-watch.ts",
     "prepare:ui-dist": "bash ../scripts/prepare-server-ui-dist.sh",
     "build": "tsc && node -e \"const fs=require('fs'),path=require('path');function copyDir(src,dst){fs.mkdirSync(dst,{recursive:true});fs.readdirSync(src).forEach(f=>{const s=path.join(src,f),d=path.join(dst,f);if(fs.statSync(s).isDirectory())copyDir(s,d);else fs.copyFileSync(s,d)})};copyDir('src/onboarding-assets','dist/onboarding-assets')\"",
     "prepack": "pnpm run prepare:ui-dist",

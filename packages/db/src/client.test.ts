@@ -1,83 +1,24 @@
 import { createHash } from "node:crypto";
 import fs from "node:fs";
-import net from "node:net";
-import os from "node:os";
-import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import postgres from "postgres";
 import {
   applyPendingMigrations,
-  ensurePostgresDatabase,
   inspectMigrations,
 } from "./client.js";
+import {
+  getEmbeddedPostgresTestSupport,
+  startEmbeddedPostgresTestDatabase,
+} from "./test-embedded-postgres.js";
 
-type EmbeddedPostgresInstance = {
-  initialise(): Promise<void>;
-  start(): Promise<void>;
-  stop(): Promise<void>;
-};
-
-type EmbeddedPostgresCtor = new (opts: {
-  databaseDir: string;
-  user: string;
-  password: string;
-  port: number;
-  persistent: boolean;
-  initdbFlags?: string[];
-  onLog?: (message: unknown) => void;
-  onError?: (message: unknown) => void;
-}) => EmbeddedPostgresInstance;
-
-const tempPaths: string[] = [];
-const runningInstances: EmbeddedPostgresInstance[] = [];
-
-async function getEmbeddedPostgresCtor(): Promise<EmbeddedPostgresCtor> {
-  const mod = await import("embedded-postgres");
-  return mod.default as EmbeddedPostgresCtor;
-}
-
-async function getAvailablePort(): Promise<number> {
-  return await new Promise((resolve, reject) => {
-    const server = net.createServer();
-    server.unref();
-    server.on("error", reject);
-    server.listen(0, "127.0.0.1", () => {
-      const address = server.address();
-      if (!address || typeof address === "string") {
-        server.close(() => reject(new Error("Failed to allocate test port")));
-        return;
-      }
-      const { port } = address;
-      server.close((error) => {
-        if (error) reject(error);
-        else resolve(port);
-      });
-    });
-  });
-}
+const cleanups: Array<() => Promise<void>> = [];
+const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
+const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : describe.skip;
 
 async function createTempDatabase(): Promise<string> {
-  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-db-client-"));
-  tempPaths.push(dataDir);
-  const port = await getAvailablePort();
-  const EmbeddedPostgres = await getEmbeddedPostgresCtor();
-  const instance = new EmbeddedPostgres({
-    databaseDir: dataDir,
-    user: "paperclip",
-    password: "paperclip",
-    port,
-    persistent: true,
-    initdbFlags: ["--encoding=UTF8", "--locale=C", "--lc-messages=C"],
-    onLog: () => {},
-    onError: () => {},
-  });
-  await instance.initialise();
-  await instance.start();
-  runningInstances.push(instance);
-
-  const adminUrl = `postgres://paperclip:paperclip@127.0.0.1:${port}/postgres`;
-  await ensurePostgresDatabase(adminUrl, "paperclip");
-  return `postgres://paperclip:paperclip@127.0.0.1:${port}/paperclip`;
+  const db = await startEmbeddedPostgresTestDatabase("paperclip-db-client-");
+  cleanups.push(db.cleanup);
+  return db.connectionString;
 }
 
 async function migrationHash(migrationFile: string): Promise<string> {
@@ -89,100 +30,100 @@ async function migrationHash(migrationFile: string): Promise<string> {
 }
 
 afterEach(async () => {
-  while (runningInstances.length > 0) {
-    const instance = runningInstances.pop();
-    if (!instance) continue;
-    await instance.stop();
-  }
-  while (tempPaths.length > 0) {
-    const tempPath = tempPaths.pop();
-    if (!tempPath) continue;
-    fs.rmSync(tempPath, { recursive: true, force: true });
+  while (cleanups.length > 0) {
+    const cleanup = cleanups.pop();
+    await cleanup?.();
   }
 });
 
-describe("applyPendingMigrations — no-migration-journal-non-empty-db", () => {
-  it(
-    "reconciles a fully migrated database that lost its journal table",
-    async () => {
-      const connectionString = await createTempDatabase();
+if (!embeddedPostgresSupport.supported) {
+  console.warn(
+    `Skipping embedded Postgres migration tests on this host: ${embeddedPostgresSupport.reason ?? "unsupported environment"}`,
+  );
+}
 
-      // Apply all migrations normally first
-      await applyPendingMigrations(connectionString);
+describeEmbeddedPostgres("applyPendingMigrations", () => {
+  describe("no-migration-journal-non-empty-db", () => {
+    it(
+      "reconciles a fully migrated database that lost its journal table",
+      async () => {
+        const connectionString = await createTempDatabase();
 
-      const sql = postgres(connectionString, { max: 1, onnotice: () => {} });
-      try {
-        // Drop the entire journal schema to simulate a journal-less database
-        await sql.unsafe(`DROP SCHEMA "drizzle" CASCADE`);
-      } finally {
-        await sql.end();
-      }
+        // Apply all migrations normally first
+        await applyPendingMigrations(connectionString);
 
-      // Verify state is detected correctly
-      const state = await inspectMigrations(connectionString);
-      expect(state).toMatchObject({
-        status: "needsMigrations",
-        reason: "no-migration-journal-non-empty-db",
-      });
+        const sql = postgres(connectionString, { max: 1, onnotice: () => {} });
+        try {
+          // Drop the entire journal schema to simulate a journal-less database
+          await sql.unsafe(`DROP SCHEMA "drizzle" CASCADE`);
+        } finally {
+          await sql.end();
+        }
 
-      // Reconciliation should bootstrap the journal and record all migrations
-      await applyPendingMigrations(connectionString);
+        // Verify state is detected correctly
+        const state = await inspectMigrations(connectionString);
+        expect(state).toMatchObject({
+          status: "needsMigrations",
+          reason: "no-migration-journal-non-empty-db",
+        });
 
-      const finalState = await inspectMigrations(connectionString);
-      expect(finalState.status).toBe("upToDate");
+        // Reconciliation should bootstrap the journal and record all migrations
+        await applyPendingMigrations(connectionString);
 
-      // Verify journal was recreated with entries
-      const verifySql = postgres(connectionString, { max: 1, onnotice: () => {} });
-      try {
-        const rows = await verifySql.unsafe<{ count: string }[]>(
-          `SELECT count(*)::text AS count FROM "drizzle"."__drizzle_migrations"`,
+        const finalState = await inspectMigrations(connectionString);
+        expect(finalState.status).toBe("upToDate");
+
+        // Verify journal was recreated with entries
+        const verifySql = postgres(connectionString, { max: 1, onnotice: () => {} });
+        try {
+          const rows = await verifySql.unsafe<{ count: string }[]>(
+            `SELECT count(*)::text AS count FROM "drizzle"."__drizzle_migrations"`,
+          );
+          expect(Number(rows[0].count)).toBeGreaterThan(0);
+        } finally {
+          await verifySql.end();
+        }
+      },
+      30_000,
+    );
+
+    it(
+      "stops reconciliation at the first unconfirmed migration and reports remaining",
+      async () => {
+        const connectionString = await createTempDatabase();
+
+        // Apply all migrations, then drop journal and one table so one migration
+        // can't be confirmed as applied
+        await applyPendingMigrations(connectionString);
+
+        const sql = postgres(connectionString, { max: 1, onnotice: () => {} });
+        try {
+          await sql.unsafe(`DROP SCHEMA "drizzle" CASCADE`);
+          // Drop a table created by 0030_rich_magneto.sql so that migration
+          // won't pass the migrationContentAlreadyApplied check
+          await sql.unsafe(`DROP TABLE IF EXISTS "company_logos"`);
+        } finally {
+          await sql.end();
+        }
+
+        const state = await inspectMigrations(connectionString);
+        if (state.status === "needsMigrations") {
+          expect(state.reason).toBe("no-migration-journal-non-empty-db");
+        } else {
+          // If migration table exists and is up to date, that's also acceptable
+          expect(state.status).toBe("upToDate");
+        }
+
+        // Should throw because it can't fully reconcile (stopped at the
+        // migration whose table was dropped)
+        await expect(applyPendingMigrations(connectionString)).rejects.toThrow(
+          /Failed to reconcile migrations/,
         );
-        expect(Number(rows[0].count)).toBeGreaterThan(0);
-      } finally {
-        await verifySql.end();
-      }
-    },
-    30_000,
-  );
+      },
+      30_000,
+    );
+  });
 
-  it(
-    "stops reconciliation at the first unconfirmed migration and reports remaining",
-    async () => {
-      const connectionString = await createTempDatabase();
-
-      // Apply all migrations, then drop journal and one table so one migration
-      // can't be confirmed as applied
-      await applyPendingMigrations(connectionString);
-
-      const sql = postgres(connectionString, { max: 1, onnotice: () => {} });
-      try {
-        await sql.unsafe(`DROP SCHEMA "drizzle" CASCADE`);
-        // Drop a table created by 0030_rich_magneto.sql so that migration
-        // won't pass the migrationContentAlreadyApplied check
-        await sql.unsafe(`DROP TABLE IF EXISTS "company_logos"`);
-      } finally {
-        await sql.end();
-      }
-
-      const state = await inspectMigrations(connectionString);
-      if (state.status === "needsMigrations") {
-        expect(state.reason).toBe("no-migration-journal-non-empty-db");
-      } else {
-        // If migration table exists and is up to date, that's also acceptable
-        expect(state.status).toBe("upToDate");
-      }
-
-      // Should throw because it can't fully reconcile (stopped at the
-      // migration whose table was dropped)
-      await expect(applyPendingMigrations(connectionString)).rejects.toThrow(
-        /Failed to reconcile migrations/,
-      );
-    },
-    30_000,
-  );
-});
-
-describe("applyPendingMigrations", () => {
   it(
     "applies an inserted earlier migration without replaying later legacy migrations",
     async () => {
