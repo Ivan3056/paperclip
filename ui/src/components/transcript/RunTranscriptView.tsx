@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { TranscriptEntry } from "../../adapters";
 import { MarkdownBody } from "../MarkdownBody";
 import { cn, formatTokens } from "../../lib/utils";
@@ -7,6 +7,7 @@ import {
   ChevronDown,
   ChevronRight,
   CircleAlert,
+  Copy,
   TerminalSquare,
   User,
   Wrench,
@@ -893,6 +894,12 @@ function TranscriptStdoutRow({
   collapseByDefault: boolean;
 }) {
   const [open, setOpen] = useState(!collapseByDefault);
+  const [copied, setCopied] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  useEffect(() => {
+    return () => clearTimeout(timerRef.current);
+  }, []);
 
   return (
     <div>
@@ -908,6 +915,25 @@ function TranscriptStdoutRow({
         >
           {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
         </button>
+        {open && (
+          <button
+            type="button"
+            className="inline-flex h-5 w-5 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
+            onClick={async () => {
+              try {
+                await navigator.clipboard.writeText(block.text);
+                clearTimeout(timerRef.current);
+                setCopied(true);
+                timerRef.current = setTimeout(() => setCopied(false), 2000);
+              } catch {
+                /* clipboard not available or permission denied */
+              }
+            }}
+            aria-label="Copy stdout"
+          >
+            {copied ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
+          </button>
+        )}
       </div>
       {open && (
         <pre className={cn(
