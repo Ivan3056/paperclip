@@ -10,6 +10,7 @@ import {
   createIssueSchema,
   linkIssueApprovalSchema,
   issueDocumentKeySchema,
+  isUuidLike,
   updateIssueWorkProductSchema,
   upsertIssueDocumentSchema,
   updateIssueSchema,
@@ -1226,6 +1227,10 @@ export function issueRoutes(db: Db, storage: StorageService) {
         : typeof req.query.afterCommentId === "string" && req.query.afterCommentId.trim().length > 0
           ? req.query.afterCommentId.trim()
           : null;
+    if (afterCommentId && !isUuidLike(afterCommentId)) {
+      res.status(400).json({ error: "Invalid after comment id" });
+      return;
+    }
     const order =
       typeof req.query.order === "string" && req.query.order.trim().toLowerCase() === "asc"
         ? "asc"
