@@ -35,7 +35,7 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc && cp -r src/migrations dist/migrations",
+    "build": "tsc && node -e \"const fs=require('fs'),path=require('path');fs.mkdirSync('dist/migrations',{recursive:true});fs.readdirSync('src/migrations').forEach(f=>{const src='src/migrations/'+f;if(fs.statSync(src).isFile())fs.copyFileSync(src,'dist/migrations/'+f)})\"",
     "clean": "rm -rf dist",
     "typecheck": "tsc --noEmit",
     "generate": "tsc -p tsconfig.json && drizzle-kit generate",

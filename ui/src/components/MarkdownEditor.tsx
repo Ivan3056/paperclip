@@ -481,7 +481,6 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
         requestAnimationFrame(() => {
           ref.current?.focus(undefined, { defaultSelection: "rootEnd" });
         });
->>>>>>> @{-1}
       }
 
       requestAnimationFrame(() => {
