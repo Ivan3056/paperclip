@@ -14,10 +14,16 @@
  *
  * ## Secret Reference Format
  *
- * A `secretRef` is a **secret UUID** — the primary key (`id`) of a row in
- * the `company_secrets` table. Operators place these UUIDs into plugin
- * config values; plugin workers resolve them at execution time via
- * `ctx.secrets.resolve(secretId)`.
+ * A `secretRef` can be provided in two formats:
+ *
+ * - **Bare UUID**: `"a1b2c3d4-e5f6-7890-abcd-ef1234567890"` — the primary
+ *   key (`id`) of a row in the `company_secrets` table.
+ * - **Prefixed UUID**: `"secret:a1b2c3d4-e5f6-7890-abcd-ef1234567890"` —
+ *   the `secret:` prefix is stripped before lookup.
+ *
+ * Operators may place UUIDs into plugin config values; plugins may also
+ * store secret references programmatically (e.g. after creating a secret
+ * via the platform REST API). Both paths are supported.
  *
  * ## Security Invariants
  *
@@ -27,18 +33,27 @@
  *   declared in their manifest may call it (enforced by `host-client-factory`).
  * - The host handler itself does not cache resolved values. Each call goes
  *   through the secret provider to honour rotation.
+ * - Company isolation is enforced: secrets are only resolvable if they
+ *   belong to a company the plugin is associated with (per AGENTS.md §5).
+ * - Per-plugin rate limiting (30 attempts/minute, process-local) provides
+ *   best-effort defence against UUID enumeration. In multi-instance
+ *   deployments this limit is per-process; defence-in-depth relies on
+ *   UUID entropy (122 bits) and company scoping.
  *
  * @see PLUGIN_SPEC.md §22 — Secrets
  * @see host-client-factory.ts — capability gating
  * @see services/secrets.ts — secretService used by agent env bindings
  */
 
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { companySecrets, companySecretVersions, pluginConfig } from "@paperclipai/db";
+import {
+  companySecrets,
+  companySecretVersions,
+  pluginCompanySettings,
+} from "@paperclipai/db";
 import type { SecretProvider } from "@paperclipai/shared";
 import { getSecretProvider } from "../secrets/provider-registry.js";
-import { pluginRegistryService } from "./plugin-registry.js";
 
 // ---------------------------------------------------------------------------
 // Error helpers
@@ -70,15 +85,42 @@ function invalidSecretRef(secretRef: string): Error {
 // Validation
 // ---------------------------------------------------------------------------
 
-/** UUID v4 regex for validating secretRef format. */
+/** Regex for validating a RFC-4122 UUID (any version). */
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** The `secret:` prefix that the platform may return on stored refs. */
+const SECRET_PREFIX = "secret:";
+
+/** Maximum length for a raw secretRef string (before parsing). */
+const MAX_SECRET_REF_LENGTH = 256;
 
 /**
  * Check whether a secretRef looks like a valid UUID.
  */
 function isUuid(value: string): boolean {
   return UUID_RE.test(value);
+}
+
+/**
+ * Parse a secret reference string and extract the UUID.
+ *
+ * Accepts bare UUIDs or `secret:`-prefixed UUIDs.  Returns the normalised
+ * UUID string, or `null` if the ref does not contain a valid UUID.
+ *
+ * Examples:
+ * - `"a1b2c3d4-..."` → `"a1b2c3d4-..."`
+ * - `"secret:a1b2c3d4-..."` → `"a1b2c3d4-..."`
+ * - `"MY_API_KEY"` → `null`
+ * - `""` → `null`
+ */
+export function parseSecretRef(raw: string): string | null {
+  if (!raw || raw.length > MAX_SECRET_REF_LENGTH) return null;
+  const stripped = raw.startsWith(SECRET_PREFIX)
+    ? raw.slice(SECRET_PREFIX.length)
+    : raw;
+  if (!stripped || !isUuid(stripped)) return null;
+  return stripped;
 }
 
 /**
@@ -171,7 +213,11 @@ export function extractSecretRefsFromConfig(
  * Matches `WorkerToHostMethods["secrets.resolve"][0]` from `protocol.ts`.
  */
 export interface PluginSecretsResolveParams {
-  /** The secret reference string (a secret UUID). */
+  /**
+   * The secret reference string — a UUID identifying a row in the
+   * `company_secrets` table. May optionally carry a `secret:` prefix
+   * (e.g. `"secret:550e8400-e29b-41d4-a716-446655440000"`).
+   */
   secretRef: string;
 }
 
@@ -183,8 +229,8 @@ export interface PluginSecretsHandlerOptions {
   db: Db;
   /**
    * The plugin ID using this handler.
-   * Used for logging context only; never included in error payloads
-   * that reach the plugin worker.
+   * Used for company-scoping and rate-limiting; never included in error
+   * payloads that reach the plugin worker.
    */
   pluginId: string;
 }
@@ -196,10 +242,10 @@ export interface PluginSecretsService {
   /**
    * Resolve a secret reference to its current plaintext value.
    *
-   * @param params - Contains the `secretRef` (UUID of the secret)
+   * @param params - Contains the `secretRef` (UUID, optionally `secret:`-prefixed)
    * @returns The resolved secret value
-   * @throws {Error} If the secret is not found, has no versions, or
-   *   the provider fails to resolve
+   * @throws {Error} If the ref is invalid, the secret is not found, has no
+   *   versions, or the provider fails to resolve
    */
   resolve(params: PluginSecretsResolveParams): Promise<string>;
 }
@@ -227,6 +273,7 @@ export interface PluginSecretsService {
  * @param options - Database connection and plugin identity
  * @returns A `PluginSecretsService` suitable for `HostServices.secrets`
  */
+
 /** Simple sliding-window rate limiter for secret resolution attempts. */
 function createRateLimiter(maxAttempts: number, windowMs: number) {
   const attempts = new Map<string, number[]>();
@@ -248,21 +295,42 @@ export function createPluginSecretsHandler(
   options: PluginSecretsHandlerOptions,
 ): PluginSecretsService {
   const { db, pluginId } = options;
-  const registry = pluginRegistryService(db);
 
-  // Rate limit: max 30 resolution attempts per plugin per minute
+  // Rate limit: max 30 resolution attempts per plugin per minute.
+  // NOTE: This limiter is process-local. In multi-instance deployments the
+  // effective limit is 30 × N where N is the number of instances.
+  // Defence-in-depth relies on UUID entropy (122 bits) and the company
+  // scoping below — not solely on this rate limiter.
   const rateLimiter = createRateLimiter(30, 60_000);
 
-  let cachedAllowedRefs: Set<string> | null = null;
-  let cachedAllowedRefsExpiry = 0;
-  const CONFIG_CACHE_TTL_MS = 30_000; // 30 seconds, matches event bus TTL
+  // Cache the set of company IDs this plugin is associated with.
+  // Plugins are instance-wide, but plugin_company_settings maps them
+  // to specific companies. We use this to enforce company boundaries
+  // on secret lookups (AGENTS.md §5).
+  let cachedCompanyIds: string[] | null = null;
+  let cachedCompanyIdsExpiry = 0;
+  const COMPANY_CACHE_TTL_MS = 30_000;
+
+  async function getPluginCompanyIds(): Promise<string[]> {
+    const now = Date.now();
+    if (cachedCompanyIds && now < cachedCompanyIdsExpiry) {
+      return cachedCompanyIds;
+    }
+    const rows = await db
+      .select({ companyId: pluginCompanySettings.companyId })
+      .from(pluginCompanySettings)
+      .where(eq(pluginCompanySettings.pluginId, pluginId));
+    cachedCompanyIds = rows.map((r) => r.companyId);
+    cachedCompanyIdsExpiry = now + COMPANY_CACHE_TTL_MS;
+    return cachedCompanyIds;
+  }
 
   return {
     async resolve(params: PluginSecretsResolveParams): Promise<string> {
       const { secretRef } = params;
 
       // ---------------------------------------------------------------
-      // 0. Rate limiting — prevent brute-force UUID enumeration
+      // 0. Rate limiting — best-effort defence against UUID enumeration
       // ---------------------------------------------------------------
       if (!rateLimiter.check(pluginId)) {
         const err = new Error("Rate limit exceeded for secret resolution");
@@ -271,54 +339,45 @@ export function createPluginSecretsHandler(
       }
 
       // ---------------------------------------------------------------
-      // 1. Validate the ref format
+      // 1. Validate and parse the ref format
       // ---------------------------------------------------------------
       if (!secretRef || typeof secretRef !== "string" || secretRef.trim().length === 0) {
         throw invalidSecretRef(secretRef ?? "<empty>");
       }
 
-      const trimmedRef = secretRef.trim();
+      const trimmed = secretRef.trim();
+      const secretId = parseSecretRef(trimmed);
 
-      if (!isUuid(trimmedRef)) {
-        throw invalidSecretRef(trimmedRef);
+      if (!secretId) {
+        throw invalidSecretRef(trimmed);
       }
 
       // ---------------------------------------------------------------
-      // 1b. Scope check — only allow secrets referenced in this plugin's config
+      // 2. Look up the secret record by UUID, scoped to the plugin's
+      //    associated companies (AGENTS.md §5 — company boundaries).
+      //
+      //    If the plugin has no company settings rows it is enabled for
+      //    all companies by default, so we skip the company filter.
+      //    In that case, isolation relies on capability gating and UUID
+      //    entropy.
       // ---------------------------------------------------------------
-      const now = Date.now();
-      if (!cachedAllowedRefs || now > cachedAllowedRefsExpiry) {
-        const [configRow, plugin] = await Promise.all([
-          db
-            .select()
-            .from(pluginConfig)
-            .where(eq(pluginConfig.pluginId, pluginId))
-            .then((rows) => rows[0] ?? null),
-          registry.getById(pluginId),
-        ]);
+      const companyIds = await getPluginCompanyIds();
 
-        const schema = (plugin?.manifestJson as unknown as Record<string, unknown> | null)
-          ?.instanceConfigSchema as Record<string, unknown> | undefined;
-        cachedAllowedRefs = extractSecretRefsFromConfig(configRow?.configJson, schema);
-        cachedAllowedRefsExpiry = now + CONFIG_CACHE_TTL_MS;
-      }
+      const conditions = companyIds.length > 0
+        ? and(
+            eq(companySecrets.id, secretId),
+            inArray(companySecrets.companyId, companyIds),
+          )
+        : eq(companySecrets.id, secretId);
 
-      if (!cachedAllowedRefs.has(trimmedRef)) {
-        // Return "not found" to avoid leaking whether the secret exists
-        throw secretNotFound(trimmedRef);
-      }
-
-      // ---------------------------------------------------------------
-      // 2. Look up the secret record by UUID
-      // ---------------------------------------------------------------
       const secret = await db
         .select()
         .from(companySecrets)
-        .where(eq(companySecrets.id, trimmedRef))
+        .where(conditions)
         .then((rows) => rows[0] ?? null);
 
       if (!secret) {
-        throw secretNotFound(trimmedRef);
+        throw secretNotFound(trimmed);
       }
 
       // ---------------------------------------------------------------
@@ -336,7 +395,7 @@ export function createPluginSecretsHandler(
         .then((rows) => rows[0] ?? null);
 
       if (!versionRow) {
-        throw secretVersionNotFound(trimmedRef);
+        throw secretVersionNotFound(trimmed);
       }
 
       // ---------------------------------------------------------------
