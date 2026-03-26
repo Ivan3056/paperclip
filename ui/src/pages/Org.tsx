@@ -1,15 +1,133 @@
 import { useEffect, useState } from "react";
-import { Link } from "@/lib/router";
-import { useQuery } from "@tanstack/react-query";
+import { Link, useNavigate } from "@/lib/router";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { agentsApi, type OrgNode } from "../api/agents";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
+import { useToast } from "../context/ToastContext";
 import { queryKeys } from "../lib/queryKeys";
 import { StatusBadge } from "../components/StatusBadge";
 import { EmptyState } from "../components/EmptyState";
 import { PageSkeleton } from "../components/PageSkeleton";
-import { ChevronRight, GitBranch } from "lucide-react";
-import { cn } from "../lib/utils";
+import { ChevronRight, GitBranch, MoreVertical, LayoutDashboard, FileText, Wrench, Settings, Activity, CreditCard, Trash2 } from "lucide-react";
+import { cn, agentUrl } from "../lib/utils";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+
+interface AgentContextMenuProps {
+  agentId: string;
+  agentName: string;
+  companyId: string;
+  onSuccess?: () => void;
+}
+
+function AgentContextMenu({ agentId, agentName, companyId, onSuccess }: AgentContextMenuProps) {
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { pushToast } = useToast();
+
+  const handleAction = (action: string) => {
+    switch (action) {
+      case "dashboard":
+        navigate(`/agents/${agentId}`);
+        break;
+      case "instructions":
+        navigate(`/agents/${agentId}/instructions`);
+        break;
+      case "skills":
+        navigate(`/agents/${agentId}/skills`);
+        break;
+      case "configuration":
+        navigate(`/agents/${agentId}/configure`);
+        break;
+      case "runs":
+        navigate(`/agents/${agentId}/runs`);
+        break;
+      case "budget":
+        navigate(`/agents/${agentId}/budget`);
+        break;
+      case "delete":
+        handleDelete();
+        break;
+    }
+  };
+
+  const handleDelete = async () => {
+    const confirmed = window.confirm(`Are you sure you want to delete "${agentName}"? This action cannot be undone.`);
+
+    if (!confirmed) return;
+
+    try {
+      await agentsApi.remove(agentId, companyId);
+      pushToast({
+        title: "Agent deleted",
+        body: `"${agentName}" has been deleted successfully.`,
+        tone: "success",
+      });
+      queryClient.invalidateQueries({ queryKey: queryKeys.org(companyId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.list(companyId) });
+      onSuccess?.();
+    } catch (error) {
+      pushToast({
+        title: "Failed to delete agent",
+        body: error instanceof Error ? error.message : "An unknown error occurred",
+        tone: "error",
+      });
+    }
+  };
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          className="p-1 rounded-md hover:bg-accent/50 text-muted-foreground hover:text-foreground transition-colors"
+          onClick={(e) => e.preventDefault()}
+        >
+          <MoreVertical className="h-4 w-4" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem onClick={() => handleAction("dashboard")}>
+          <LayoutDashboard className="mr-2 h-4 w-4" />
+          Dashboard
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => handleAction("instructions")}>
+          <FileText className="mr-2 h-4 w-4" />
+          Instructions
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => handleAction("skills")}>
+          <Wrench className="mr-2 h-4 w-4" />
+          Skills
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => handleAction("configuration")}>
+          <Settings className="mr-2 h-4 w-4" />
+          Configuration
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => handleAction("runs")}>
+          <Activity className="mr-2 h-4 w-4" />
+          Runs
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => handleAction("budget")}>
+          <CreditCard className="mr-2 h-4 w-4" />
+          Budget
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          variant="destructive"
+          onClick={() => handleAction("delete")}
+        >
+          <Trash2 className="mr-2 h-4 w-4" />
+          Delete
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
 
 function OrgTree({
   nodes,
@@ -40,6 +158,7 @@ function OrgTreeNode({
 }) {
   const [expanded, setExpanded] = useState(true);
   const hasChildren = node.reports.length > 0;
+  const { selectedCompanyId } = useCompany();
 
   return (
     <div>
@@ -81,6 +200,15 @@ function OrgTreeNode({
         <span className="font-medium flex-1">{node.name}</span>
         <span className="text-xs text-muted-foreground">{node.role}</span>
         <StatusBadge status={node.status} />
+        {selectedCompanyId && (
+          <div onClick={(e) => e.preventDefault()}>
+            <AgentContextMenu
+              agentId={node.id}
+              agentName={node.name}
+              companyId={selectedCompanyId}
+            />
+          </div>
+        )}
       </Link>
       {hasChildren && expanded && (
         <OrgTree nodes={node.reports} depth={depth + 1} hrefFn={hrefFn} />

@@ -1442,11 +1442,17 @@ export function resolveJoinRequestAgentManagerId(
   const ceoCandidates = candidates.filter(
     (candidate) => candidate.role === "ceo"
   );
-  if (ceoCandidates.length === 0) return null;
-  const rootCeo = ceoCandidates.find(
+  if (ceoCandidates.length > 0) {
+    const rootCeo = ceoCandidates.find(
+      (candidate) => candidate.reportsTo === null
+    );
+    return (rootCeo ?? ceoCandidates[0]).id;
+  }
+  // Fallback: use any root-level agent (reportsTo === null) as manager
+  const rootManager = candidates.find(
     (candidate) => candidate.reportsTo === null
   );
-  return (rootCeo ?? ceoCandidates[0] ?? null)?.id ?? null;
+  return rootManager?.id ?? null;
 }
 
 function isInviteTokenHashCollisionError(error: unknown) {
@@ -2596,7 +2602,7 @@ export function accessRoutes(
         const managerId = resolveJoinRequestAgentManagerId(existingAgents);
         if (!managerId) {
           throw conflict(
-            "Join request cannot be approved because this company has no active CEO"
+            "Join request cannot be approved because this company has no active agents to manage the new agent. Create a CEO or root-level agent first."
           );
         }
 

@@ -72,6 +72,13 @@ export const updateIssueSchema = createIssueSchema.partial().extend({
 export type UpdateIssue = z.infer<typeof updateIssueSchema>;
 export type IssueExecutionWorkspaceSettings = z.infer<typeof issueExecutionWorkspaceSettingsSchema>;
 
+export const bulkUpdateIssuesSchema = z.object({
+  issueIds: z.array(z.string().uuid()).nonempty(),
+  data: createIssueSchema.partial(),
+});
+
+export type BulkUpdateIssues = z.infer<typeof bulkUpdateIssuesSchema>;
+
 export const checkoutIssueSchema = z.object({
   agentId: z.string().uuid(),
   expectedStatuses: z.array(z.enum(ISSUE_STATUSES)).nonempty(),

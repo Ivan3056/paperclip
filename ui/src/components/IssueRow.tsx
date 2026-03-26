@@ -3,6 +3,7 @@ import type { Issue } from "@paperclipai/shared";
 import { Link } from "@/lib/router";
 import { cn } from "../lib/utils";
 import { StatusIcon } from "./StatusIcon";
+import { Checkbox } from "@/components/ui/checkbox";
 
 type UnreadState = "hidden" | "visible" | "fading";
 
@@ -18,6 +19,8 @@ interface IssueRowProps {
   unreadState?: UnreadState | null;
   onMarkRead?: () => void;
   className?: string;
+  isSelected?: boolean;
+  onToggleSelect?: (issueId: string) => void;
 }
 
 export function IssueRow({

@@ -24,6 +24,8 @@ import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/component
 import { CircleDot, Plus, Filter, ArrowUpDown, Layers, Check, X, ChevronRight, List, Columns3, User, Search } from "lucide-react";
 import { KanbanBoard } from "./KanbanBoard";
 import type { Issue } from "@paperclipai/shared";
+import { useToast } from "@/hooks/useToast";
+import { Trash2, CheckSquare2, Square } from "lucide-react";
 
 /* ── Helpers ── */
 
@@ -192,11 +194,14 @@ export function IssuesList({
 }: IssuesListProps) {
   const { selectedCompanyId } = useCompany();
   const { openNewIssue } = useDialog();
+  const { toast } = useToast();
   const { data: session } = useQuery({
     queryKey: queryKeys.auth.session,
     queryFn: () => authApi.getSession(),
   });
   const currentUserId = session?.user?.id ?? session?.session?.userId ?? null;
+
+  const [selectedIssueIds, setSelectedIssueIds] = useState<Set<string>>(new Set());
 
   // Scope the storage key per company so folding/view state is independent across companies.
   const scopedKey = selectedCompanyId ? `${viewStateKey}:${selectedCompanyId}` : viewStateKey;
@@ -324,6 +329,54 @@ export function IssuesList({
     setAssigneeSearch("");
   };
 
+  const toggleIssueSelection = (issueId: string) => {
+    setSelectedIssueIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(issueId)) {
+        next.delete(issueId);
+      } else {
+        next.add(issueId);
+      }
+      return next;
+    });
+  };
+
+  const selectAllIssues = () => {
+    setSelectedIssueIds(new Set(filtered.map((i) => i.id)));
+  };
+
+  const clearSelection = () => {
+    setSelectedIssueIds(new Set());
+  };
+
+  const bulkUpdateIssues = useMutation({
+    mutationFn: ({ issueIds, data }: { issueIds: string[]; data: Record<string, unknown> }) =>
+      issuesApi.bulkUpdate(selectedCompanyId!, issueIds, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.issues.list(selectedCompanyId!) });
+      clearSelection();
+      toast({
+        title: "Задачи обновлены",
+        description: `Успешно обновлено ${selectedIssueIds.size} задач(и)`,
+      });
+    },
+    onError: (err) => {
+      toast({
+        title: "Ошибка обновления",
+        description: err.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleBulkStatusChange = (status: string) => {
+    if (selectedIssueIds.size === 0) return;
+    bulkUpdateIssues.mutate({
+      issueIds: Array.from(selectedIssueIds),
+      data: { status },
+    });
+  };
+
   return (
     <div className="space-y-4">
       {/* Toolbar */}
@@ -346,6 +399,57 @@ export function IssuesList({
               aria-label="Search issues"
             />
           </div>
+          {selectedIssueIds.size > 0 && (
+            <div className="flex items-center gap-1 ml-2">
+              <span className="text-xs text-muted-foreground">{selectedIssueIds.size} выбрано</span>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={selectAllIssues}
+                className="h-7 text-xs"
+              >
+                <CheckSquare2 className="h-3.5 w-3.5 sm:mr-1" />
+                <span className="hidden sm:inline">Все</span>
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={clearSelection}
+                className="h-7 text-xs"
+              >
+                <X className="h-3.5 w-3.5" />
+              </Button>
+              <div className="h-4 w-px bg-border mx-1" />
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button size="sm" variant="outline" className="h-7 text-xs">
+                    Статус
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent align="start" className="w-40 p-1">
+                  {statusOrder.map((status) => (
+                    <button
+                      key={status}
+                      className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-accent/50"
+                      onClick={() => handleBulkStatusChange(status)}
+                    >
+                      <StatusIcon status={status} />
+                      <span>{statusLabel(status)}</span>
+                    </button>
+                  ))}
+                </PopoverContent>
+              </Popover>
+              <Button
+                size="sm"
+                variant="destructive"
+                className="h-7 text-xs"
+                onClick={() => handleBulkStatusChange("done")}
+              >
+                <Trash2 className="h-3.5 w-3.5 sm:mr-1" />
+                <span className="hidden sm:inline">Завершить</span>
+              </Button>
+            </div>
+          )}
         </div>
 
         <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">

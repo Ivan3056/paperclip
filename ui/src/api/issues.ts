@@ -54,6 +54,11 @@ export const issuesApi = {
   create: (companyId: string, data: Record<string, unknown>) =>
     api.post<Issue>(`/companies/${companyId}/issues`, data),
   update: (id: string, data: Record<string, unknown>) => api.patch<Issue>(`/issues/${id}`, data),
+  bulkUpdate: (companyId: string, issueIds: string[], data: Record<string, unknown>) =>
+    api.post<{ updated: Array<{ id: string; identifier?: string | null; status?: string | null }> }>(
+      `/companies/${companyId}/issues/bulk`,
+      { issueIds, data },
+    ),
   remove: (id: string) => api.delete<Issue>(`/issues/${id}`),
   checkout: (id: string, agentId: string) =>
     api.post<Issue>(`/issues/${id}/checkout`, {

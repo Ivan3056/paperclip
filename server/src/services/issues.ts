@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNull, lt, ne, or, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
   activityLog,
@@ -6,6 +6,7 @@ import {
   assets,
   companies,
   companyMemberships,
+  costEvents,
   documents,
   goals,
   heartbeatRuns,
@@ -752,6 +753,15 @@ export function issueService(db: Db) {
       return enriched;
     },
 
+    getByIds: async (ids: string[]) => {
+      if (ids.length === 0) return [];
+      const rows = await db
+        .select()
+        .from(issues)
+        .where(inArray(issues.id, ids));
+      return withIssueLabels(db, rows);
+    },
+
     getByIdentifier: async (identifier: string) => {
       const row = await db
         .select()
@@ -989,6 +999,8 @@ export function issueService(db: Db) {
           .select({ documentId: issueDocuments.documentId })
           .from(issueDocuments)
           .where(eq(issueDocuments.issueId, id));
+
+        await tx.delete(costEvents).where(eq(costEvents.issueId, id));
 
         const removedIssue = await tx
           .delete(issues)
@@ -1295,14 +1307,14 @@ export function issueService(db: Db) {
         if (!anchor) return [];
         conditions.push(
           order === "asc"
-            ? sql<boolean>`(
-                ${issueComments.createdAt} > ${anchor.createdAt}
-                OR (${issueComments.createdAt} = ${anchor.createdAt} AND ${issueComments.id} > ${anchor.id})
-              )`
-            : sql<boolean>`(
-                ${issueComments.createdAt} < ${anchor.createdAt}
-                OR (${issueComments.createdAt} = ${anchor.createdAt} AND ${issueComments.id} < ${anchor.id})
-              )`,
+            ? or(
+                gt(issueComments.createdAt, anchor.createdAt),
+                and(eq(issueComments.createdAt, anchor.createdAt), gt(issueComments.id, anchor.id)),
+              )
+            : or(
+                lt(issueComments.createdAt, anchor.createdAt),
+                and(eq(issueComments.createdAt, anchor.createdAt), lt(issueComments.id, anchor.id)),
+              ),
         );
       }
 

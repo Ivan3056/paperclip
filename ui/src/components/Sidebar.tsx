@@ -11,6 +11,7 @@ import {
   Boxes,
   Repeat,
   Settings,
+  Terminal,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { SidebarSection } from "./SidebarSection";
@@ -19,6 +20,7 @@ import { SidebarProjects } from "./SidebarProjects";
 import { SidebarAgents } from "./SidebarAgents";
 import { useDialog } from "../context/DialogContext";
 import { useCompany } from "../context/CompanyContext";
+import { useConsolePanel } from "../context/ConsoleContext";
 import { heartbeatsApi } from "../api/heartbeats";
 import { queryKeys } from "../lib/queryKeys";
 import { useInboxBadge } from "../hooks/useInboxBadge";

@@ -13,6 +13,7 @@ import {
   updateIssueWorkProductSchema,
   upsertIssueDocumentSchema,
   updateIssueSchema,
+  bulkUpdateIssuesSchema,
 } from "@paperclipai/shared";
 import type { StorageService } from "../storage/types.js";
 import { validate } from "../middleware/validate.js";
@@ -1061,6 +1062,49 @@ export function issueRoutes(db: Db, storage: StorageService) {
     });
 
     res.json(issue);
+  });
+
+  router.post("/companies/:companyId/issues/bulk", validate(bulkUpdateIssuesSchema), async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const { issueIds, data } = req.body as { issueIds: string[]; data: Record<string, unknown> };
+    assertCompanyAccess(req, companyId);
+
+    const issues = await svc.getByIds(issueIds);
+    const companyIssueIds = new Set(issues.filter((i) => i.companyId === companyId).map((i) => i.id));
+    const invalidIds = issueIds.filter((id) => !companyIssueIds.has(id));
+    if (invalidIds.length > 0) {
+      res.status(403).json({ error: "Invalid issue IDs or insufficient access", invalidIds });
+      return;
+    }
+
+    const updatedIssues: Array<{ id: string; identifier?: string | null; status?: string | null }> = [];
+    for (const issueId of issueIds) {
+      try {
+        const updated = await svc.update(issueId, data);
+        if (updated) {
+          updatedIssues.push({ id: updated.id, identifier: updated.identifier, status: updated.status });
+        }
+      } catch (err) {
+        logger.warn({ err, issueId }, "failed to update issue in bulk operation");
+      }
+    }
+
+    const actor = getActorInfo(req);
+    for (const issue of issues) {
+      await logActivity(db, {
+        companyId: issue.companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        runId: actor.runId,
+        action: "issue.bulk_updated",
+        entityType: "issue",
+        entityId: issue.id,
+        details: { updatedFields: Object.keys(data) },
+      });
+    }
+
+    res.json({ updated: updatedIssues });
   });
 
   router.post("/issues/:id/checkout", validate(checkoutIssueSchema), async (req, res) => {

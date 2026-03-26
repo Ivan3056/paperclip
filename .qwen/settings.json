@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "playwright": {
+      "command": "npx",
+      "args": ["@playwright/mcp@latest"]
+    }
+  },
+  "security": {
+    "auth": {
+      "selectedType": "qwen-oauth"
+    }
+  },
+  "model": {
+    "name": "coder-model"
+  },
+  "$version": 3
+}
