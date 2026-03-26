@@ -49,6 +49,6 @@ Invoke it whenever you need to remember, retrieve, or organize anything.
 
 These files are essential. Read them from this instructions bundle.
 
-- `HEARTBEAT.md` -- execution and extraction checklist. Run every heartbeat.
-- `SOUL.md` -- who you are and how you should act.
-- `TOOLS.md` -- tools you have access to
+- `HEARTBEAT.md` (or `$AGENT_HOME/instructions/HEARTBEAT.md`) -- execution and extraction checklist. Run every heartbeat.
+- `SOUL.md` (or `$AGENT_HOME/instructions/SOUL.md`) -- who you are and how you should act.
+- `TOOLS.md` (or `$AGENT_HOME/instructions/TOOLS.md`) -- tools you have access to.
