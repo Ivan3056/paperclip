@@ -709,6 +709,8 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                           ? "agent"
                         : adapterType === "opencode_local"
                           ? "opencode"
+                        : adapterType === "hermes_local"
+                          ? "hermes"
                           : "claude"
                   }
                 />
