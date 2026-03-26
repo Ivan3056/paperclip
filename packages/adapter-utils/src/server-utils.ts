@@ -10,6 +10,7 @@ export interface RunProcessResult {
   exitCode: number | null;
   signal: string | null;
   timedOut: boolean;
+  idleTimedOut?: boolean;
   stdout: string;
   stderr: string;
   pid: number | null;
@@ -727,6 +728,7 @@ export async function runChildProcess(
     cwd: string;
     env: Record<string, string>;
     timeoutSec: number;
+    idleTimeoutSec?: number;
     graceSec: number;
     onLog: (stream: "stdout" | "stderr", chunk: string) => Promise<void>;
     onLogError?: (err: unknown, runId: string, message: string) => void;
@@ -779,6 +781,7 @@ export async function runChildProcess(
         runningProcesses.set(runId, { child, graceSec: opts.graceSec });
 
         let timedOut = false;
+        let idleTimedOut = false;
         let stdout = "";
         let stderr = "";
         let logChain: Promise<void> = Promise.resolve();
@@ -787,6 +790,7 @@ export async function runChildProcess(
           opts.timeoutSec > 0
             ? setTimeout(() => {
                 timedOut = true;
+                if (idleTimer) clearTimeout(idleTimer);
                 child.kill("SIGTERM");
                 setTimeout(() => {
                   if (!child.killed) {
@@ -796,7 +800,31 @@ export async function runChildProcess(
               }, opts.timeoutSec * 1000)
             : null;
 
+        const idleSec = opts.idleTimeoutSec ?? 0;
+        let idleTimer: ReturnType<typeof setTimeout> | null = null;
+        const resetIdleTimer = idleSec > 0
+          ? () => {
+              if (idleTimer) clearTimeout(idleTimer);
+              idleTimer = setTimeout(() => {
+                idleTimedOut = true;
+                if (timeout) clearTimeout(timeout);
+                const idleMsg = `[paperclip] idle timeout: no output for ${idleSec}s, killing child (run ${runId})\n`;
+                logChain = logChain
+                  .then(() => opts.onLog("stderr", idleMsg))
+                  .catch((err) => onLogError(err, runId, "failed to log idle timeout message"));
+                child.kill("SIGTERM");
+                setTimeout(() => {
+                  if (!child.killed) {
+                    child.kill("SIGKILL");
+                  }
+                }, Math.max(1, opts.graceSec) * 1000);
+              }, idleSec * 1000);
+            }
+          : null;
+        if (resetIdleTimer) resetIdleTimer();
+
         child.stdout?.on("data", (chunk: unknown) => {
+          if (resetIdleTimer) resetIdleTimer();
           const text = String(chunk);
           stdout = appendWithCap(stdout, text);
           logChain = logChain
@@ -805,6 +833,7 @@ export async function runChildProcess(
         });
 
         child.stderr?.on("data", (chunk: unknown) => {
+          if (resetIdleTimer) resetIdleTimer();
           const text = String(chunk);
           stderr = appendWithCap(stderr, text);
           logChain = logChain
@@ -814,6 +843,7 @@ export async function runChildProcess(
 
         child.on("error", (err: Error) => {
           if (timeout) clearTimeout(timeout);
+          if (idleTimer) clearTimeout(idleTimer);
           runningProcesses.delete(runId);
           const errno = (err as NodeJS.ErrnoException).code;
           const pathValue = mergedEnv.PATH ?? mergedEnv.Path ?? "";
@@ -826,12 +856,14 @@ export async function runChildProcess(
 
         child.on("close", (code: number | null, signal: NodeJS.Signals | null) => {
           if (timeout) clearTimeout(timeout);
+          if (idleTimer) clearTimeout(idleTimer);
           runningProcesses.delete(runId);
           void logChain.finally(() => {
             resolve({
               exitCode: code,
               signal,
               timedOut,
+              idleTimedOut,
               stdout,
               stderr,
               pid: child.pid ?? null,
