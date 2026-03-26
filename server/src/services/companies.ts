@@ -11,6 +11,7 @@ import {
   agentWakeupRequests,
   issues,
   issueComments,
+  issueReadStates,
   projects,
   goals,
   heartbeatRuns,
@@ -25,6 +26,13 @@ import {
   invites,
   principalPermissionGrants,
   companyMemberships,
+  budgetIncidents,
+  budgetPolicies,
+  documents,
+  workspaceOperations,
+  workspaceRuntimeServices,
+  companySkills,
+  routines,
 } from "@paperclipai/db";
 import { notFound, unprocessable } from "../errors.js";
 
@@ -253,30 +261,45 @@ export function companyService(db: Db) {
 
     remove: (id: string) =>
       db.transaction(async (tx) => {
-        // Delete from child tables in dependency order
+        // Delete from child tables in FK-dependency order.
+        // Tables referencing heartbeatRuns (NO cascade) must come first.
         await tx.delete(heartbeatRunEvents).where(eq(heartbeatRunEvents.companyId, id));
         await tx.delete(agentTaskSessions).where(eq(agentTaskSessions.companyId, id));
+        await tx.delete(financeEvents).where(eq(financeEvents.companyId, id));
+        await tx.delete(costEvents).where(eq(costEvents.companyId, id));
+        await tx.delete(activityLog).where(eq(activityLog.companyId, id));
+        await tx.delete(workspaceOperations).where(eq(workspaceOperations.companyId, id));
+        await tx.delete(workspaceRuntimeServices).where(eq(workspaceRuntimeServices.companyId, id));
         await tx.delete(heartbeatRuns).where(eq(heartbeatRuns.companyId, id));
         await tx.delete(agentWakeupRequests).where(eq(agentWakeupRequests.companyId, id));
         await tx.delete(agentApiKeys).where(eq(agentApiKeys.companyId, id));
         await tx.delete(agentRuntimeState).where(eq(agentRuntimeState.companyId, id));
+        // Issue children (issueReadStates has NO cascade from issues)
+        await tx.delete(issueReadStates).where(eq(issueReadStates.companyId, id));
         await tx.delete(issueComments).where(eq(issueComments.companyId, id));
-        await tx.delete(costEvents).where(eq(costEvents.companyId, id));
-        await tx.delete(financeEvents).where(eq(financeEvents.companyId, id));
+        // Budget tables (budgetIncidents refs approvals + budgetPolicies, NO cascade)
+        await tx.delete(budgetIncidents).where(eq(budgetIncidents.companyId, id));
         await tx.delete(approvalComments).where(eq(approvalComments.companyId, id));
         await tx.delete(approvals).where(eq(approvals.companyId, id));
+        await tx.delete(budgetPolicies).where(eq(budgetPolicies.companyId, id));
         await tx.delete(companySecrets).where(eq(companySecrets.companyId, id));
         await tx.delete(joinRequests).where(eq(joinRequests.companyId, id));
         await tx.delete(invites).where(eq(invites.companyId, id));
         await tx.delete(principalPermissionGrants).where(eq(principalPermissionGrants.companyId, id));
         await tx.delete(companyMemberships).where(eq(companyMemberships.companyId, id));
+        // Issues (cascades: issueLabels, issueAttachments, issueDocuments, issueWorkProducts, issueApprovals)
         await tx.delete(issues).where(eq(issues.companyId, id));
+        await tx.delete(documents).where(eq(documents.companyId, id));
+        // Routines (assigneeAgentId refs agents with NO cascade, must come before agents)
+        await tx.delete(routines).where(eq(routines.companyId, id));
         await tx.delete(companyLogos).where(eq(companyLogos.companyId, id));
         await tx.delete(assets).where(eq(assets.companyId, id));
-        await tx.delete(goals).where(eq(goals.companyId, id));
+        // Projects before goals (projects.goalId refs goals, NO cascade)
         await tx.delete(projects).where(eq(projects.companyId, id));
+        await tx.delete(goals).where(eq(goals.companyId, id));
+        await tx.delete(companySkills).where(eq(companySkills.companyId, id));
         await tx.delete(agents).where(eq(agents.companyId, id));
-        await tx.delete(activityLog).where(eq(activityLog.companyId, id));
+        // labels and pluginCompanySettings cascade from companies
         const rows = await tx
           .delete(companies)
           .where(eq(companies.id, id))
