@@ -4,9 +4,34 @@ import os from "node:os";
 import path from "node:path";
 import { testEnvironment } from "@paperclipai/adapter-gemini-local/server";
 
-async function writeFakeGeminiCommand(binDir: string, argsCapturePath: string): Promise<string> {
+async function writeGeminiWrapper(binDir: string, scriptBody: string): Promise<string> {
+  const scriptPath = path.join(binDir, "gemini-stub.cjs");
+  await fs.writeFile(scriptPath, scriptBody, "utf8");
+
+  if (process.platform === "win32") {
+    const commandPath = path.join(binDir, "gemini.cmd");
+    const command = [
+      "@echo off",
+      `"${process.execPath}" "${scriptPath}" %*`,
+      "",
+    ].join("\r\n");
+    await fs.writeFile(commandPath, command, "utf8");
+    return commandPath;
+  }
+
   const commandPath = path.join(binDir, "gemini");
-  const script = `#!/usr/bin/env node
+  const command = [
+    "#!/bin/sh",
+    `exec "${process.execPath}" "${scriptPath}" "$@"`,
+    "",
+  ].join("\n");
+  await fs.writeFile(commandPath, command, "utf8");
+  await fs.chmod(commandPath, 0o755);
+  return commandPath;
+}
+
+async function writeFakeGeminiCommand(binDir: string): Promise<string> {
+  const script = `
 const fs = require("node:fs");
 const outPath = process.env.PAPERCLIP_TEST_ARGS_PATH;
 if (outPath) {
@@ -22,23 +47,18 @@ console.log(JSON.stringify({
   result: "hello",
 }));
 `;
-  await fs.writeFile(commandPath, script, "utf8");
-  await fs.chmod(commandPath, 0o755);
-  return commandPath;
+  return writeGeminiWrapper(binDir, script);
 }
 
 async function writeQuotaGeminiCommand(binDir: string): Promise<string> {
-  const commandPath = path.join(binDir, "gemini");
-  const script = `#!/usr/bin/env node
+  const script = `
 if (process.argv.includes("--help")) {
   process.exit(0);
 }
 console.error("429 RESOURCE_EXHAUSTED: You exceeded your current quota and billing details.");
 process.exit(1);
 `;
-  await fs.writeFile(commandPath, script, "utf8");
-  await fs.chmod(commandPath, 0o755);
-  return commandPath;
+  return writeGeminiWrapper(binDir, script);
 }
 
 describe("gemini_local environment diagnostics", () => {
@@ -76,7 +96,7 @@ describe("gemini_local environment diagnostics", () => {
     const cwd = path.join(root, "workspace");
     const argsCapturePath = path.join(root, "args.json");
     await fs.mkdir(binDir, { recursive: true });
-    await writeFakeGeminiCommand(binDir, argsCapturePath);
+    await writeFakeGeminiCommand(binDir);
 
     const result = await testEnvironment({
       companyId: "company-1",
