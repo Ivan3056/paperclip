@@ -387,6 +387,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const timeoutSec = asNumber(config.timeoutSec, 0);
   const idleTimeoutSec = asNumber(config.idleTimeoutSec, 600);
   const graceSec = asNumber(config.graceSec, 20);
+  const idleTimeoutSec = asNumber(config.idleTimeoutSec, 600);
   const extraArgs = (() => {
     const fromExtraArgs = asStringArray(config.extraArgs);
     if (fromExtraArgs.length > 0) return fromExtraArgs;
@@ -512,6 +513,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       timeoutSec,
       idleTimeoutSec,
       graceSec,
+      idleTimeoutSec,
       onSpawn,
       onLog: async (stream, chunk) => {
         if (stream !== "stderr") {

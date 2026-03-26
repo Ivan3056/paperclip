@@ -802,6 +802,7 @@ export async function runChildProcess(
 
         const idleSec = opts.idleTimeoutSec ?? 0;
         let idleTimer: ReturnType<typeof setTimeout> | null = null;
+        let lastActivityAt = Date.now();
         const resetIdleTimer = idleSec > 0
           ? () => {
               if (idleTimer) clearTimeout(idleTimer);
@@ -826,6 +827,7 @@ export async function runChildProcess(
         child.stdout?.on("data", (chunk: unknown) => {
           if (resetIdleTimer) resetIdleTimer();
           const text = String(chunk);
+          lastActivityAt = Date.now();
           stdout = appendWithCap(stdout, text);
           logChain = logChain
             .then(() => opts.onLog("stdout", text))
@@ -835,6 +837,7 @@ export async function runChildProcess(
         child.stderr?.on("data", (chunk: unknown) => {
           if (resetIdleTimer) resetIdleTimer();
           const text = String(chunk);
+          lastActivityAt = Date.now();
           stderr = appendWithCap(stderr, text);
           logChain = logChain
             .then(() => opts.onLog("stderr", text))

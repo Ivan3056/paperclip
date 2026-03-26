@@ -2185,8 +2185,14 @@ export function heartbeatService(db: Db) {
       mergedConfig,
     );
     const runtimeSkillEntries = await companySkills.listRuntimeSkillEntries(agent.companyId);
+    const policy = parseHeartbeatPolicy(agent);
+    const timeoutFallback =
+      !resolvedConfig.timeoutSec && policy.intervalSec > 0
+        ? { timeoutSec: Math.max(30, policy.intervalSec - 1) }
+        : {};
     const runtimeConfig = {
       ...resolvedConfig,
+      ...timeoutFallback,
       paperclipRuntimeSkills: runtimeSkillEntries,
     };
     const issueRef = issueContext
