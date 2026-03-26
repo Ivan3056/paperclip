@@ -54,9 +54,9 @@ import {
   Check,
   Loader2,
   ChevronDown,
-  X,
-  Zap
+  X
 } from "lucide-react";
+import { HermesIcon } from "./HermesIcon";
 
 type Step = 1 | 2 | 3 | 4;
 type AdapterType =
@@ -851,7 +851,7 @@ export function OnboardingWizard() {
                           {
                             value: "hermes_local" as const,
                             label: "Hermes Agent",
-                            icon: Zap,
+                            icon: HermesIcon,
                             desc: "Local multi-provider agent"
                           },
                           {

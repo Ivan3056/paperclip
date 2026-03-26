@@ -18,10 +18,10 @@ import {
   MousePointer2,
   Sparkles,
   Terminal,
-  Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { OpenCodeLogoIcon } from "./OpenCodeLogoIcon";
+import { HermesIcon } from "./HermesIcon";
 
 type AdvancedAdapterType =
   | "claude_local"
@@ -69,7 +69,7 @@ const ADVANCED_ADAPTER_OPTIONS: Array<{
   {
     value: "hermes_local",
     label: "Hermes Agent",
-    icon: Zap,
+    icon: HermesIcon,
     desc: "Local multi-provider agent",
   },
   {
