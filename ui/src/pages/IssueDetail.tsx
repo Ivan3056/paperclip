@@ -492,6 +492,9 @@ export function IssueDetail() {
       invalidateIssue();
       queryClient.invalidateQueries({ queryKey: queryKeys.issues.comments(issueId!) });
     },
+    onError: (err) => {
+      pushToast({ title: "Failed to post comment", body: err instanceof Error ? err.message : "Something went wrong.", tone: "error" });
+    },
   });
 
   const addCommentAndReassign = useMutation({
@@ -513,6 +516,9 @@ export function IssueDetail() {
     onSuccess: () => {
       invalidateIssue();
       queryClient.invalidateQueries({ queryKey: queryKeys.issues.comments(issueId!) });
+    },
+    onError: (err) => {
+      pushToast({ title: "Failed to post comment", body: err instanceof Error ? err.message : "Something went wrong.", tone: "error" });
     },
   });
 
