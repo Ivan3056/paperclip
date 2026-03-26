@@ -138,7 +138,40 @@ When adding endpoints:
 - Use company selection context for company-scoped pages
 - Surface failures clearly; do not silently ignore API errors
 
-## 10. Definition of Done
+## 10. Task Title and Description Standards
+
+When creating tasks or subtasks (in Paperclip or issue trackers), follow these rules:
+
+- **Action-oriented titles:** Use verb + object + constraint format. Write directives, not problem statements.
+  - Good: "Remove all credit_repair references from codebase"
+  - Bad: "Missing credit_repair industry data"
+- **Unambiguous descriptions:** State the desired outcome clearly so it cannot be misread as the opposite action.
+- **Acceptance criteria required:** Every task must include explicit, verifiable acceptance criteria before work begins. Use checklist format.
+- **Clarify before starting:** If a task has ambiguous title/description or missing acceptance criteria, ask for clarification in comments before beginning work.
+- **Verify before done:** Before marking a task `done`, verify each acceptance criterion is met.
+
+## 11. PR and Merge Policy
+
+- **One task = one PR.** Each logical unit of work gets its own PR to main. Do not bundle unrelated changes.
+- **Merge within 48 hours.** Feature branches must merge to main within 48 hours of task completion. No long-lived feature branches.
+- **Rebase frequently.** Rebase against main often to catch integration issues early.
+- **No big-bang merges.** If a branch is >10 commits ahead of main, break it into smaller PRs.
+- **Done means merged.** A code task is not `done` until its PR is merged to main.
+
+## 12. Completion Verification
+
+- **Critical/high priority tasks:** Manager reviews output against acceptance criteria before `done`. The reviewer checks "did this solve the problem?" not just "does CI pass?"
+- **Medium/low priority tasks:** Self-verification against acceptance criteria is sufficient, but must be documented in the closing comment.
+- **Always verify outcomes, not just process.** Passing CI is necessary but not sufficient. The actual requirement must be met.
+
+## 13. CI Gate Standards
+
+- CI gates must comprehensively enforce business rules — use broad regex patterns, not just a few exact strings.
+- When creating or updating CI gates, enumerate all known variants of the target pattern.
+- When a CI gate gap is found, fix it immediately and add a regression test.
+- Model: the `check-debranding.sh` tightening from DLD-848 is the reference pattern for comprehensive CI enforcement.
+
+## 14. Definition of Done
 
 A change is done when all are true:
 
@@ -146,3 +179,5 @@ A change is done when all are true:
 2. Typecheck, tests, and build pass
 3. Contracts are synced across db/shared/server/ui
 4. Docs updated when behavior or commands change
+5. All acceptance criteria verified and confirmed in closing comment
+6. PR merged to main (for code changes)

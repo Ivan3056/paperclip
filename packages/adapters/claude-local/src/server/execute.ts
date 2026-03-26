@@ -372,12 +372,20 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const isEventTriggered =
     (typeof context.wakeCommentId === "string" && context.wakeCommentId.trim().length > 0) ||
     (typeof context.commentId === "string" && context.commentId.trim().length > 0);
+  const isValidUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(runtimeSessionId);
   const canResumeSession =
     runtimeSessionId.length > 0 &&
+    isValidUuid &&
     !isManualInvoke &&
     !isEventTriggered &&
     (runtimeSessionCwd.length === 0 || path.resolve(runtimeSessionCwd) === path.resolve(cwd));
   const sessionId = canResumeSession ? runtimeSessionId : null;
+  if (runtimeSessionId && !isValidUuid) {
+    await onLog(
+      "stdout",
+      `[paperclip] Claude session "${runtimeSessionId}" is not a valid UUID and will not be passed to --resume.\n`,
+    );
+  }
   if (runtimeSessionId && !canResumeSession) {
     const reason = isManualInvoke
       ? "manual invoke"
