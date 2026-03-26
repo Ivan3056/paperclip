@@ -1,5 +1,6 @@
 import type { ServerAdapterModule } from "./types.js";
 import { getAdapterSessionManagement } from "@paperclipai/adapter-utils";
+import { normalizeAgentAdapterType } from "@paperclipai/shared";
 import {
   execute as claudeExecute,
   listClaudeSkills,
@@ -197,7 +198,7 @@ const adaptersByType = new Map<string, ServerAdapterModule>(
 );
 
 export function getServerAdapter(type: string): ServerAdapterModule {
-  const adapter = adaptersByType.get(type);
+  const adapter = adaptersByType.get(normalizeAgentAdapterType(type));
   if (!adapter) {
     // Fall back to process adapter for unknown types
     return processAdapter;
@@ -206,7 +207,7 @@ export function getServerAdapter(type: string): ServerAdapterModule {
 }
 
 export async function listAdapterModels(type: string): Promise<{ id: string; label: string }[]> {
-  const adapter = adaptersByType.get(type);
+  const adapter = adaptersByType.get(normalizeAgentAdapterType(type));
   if (!adapter) return [];
   if (adapter.listModels) {
     const discovered = await adapter.listModels();
@@ -220,5 +221,5 @@ export function listServerAdapters(): ServerAdapterModule[] {
 }
 
 export function findServerAdapter(type: string): ServerAdapterModule | null {
-  return adaptersByType.get(type) ?? null;
+  return adaptersByType.get(normalizeAgentAdapterType(type)) ?? null;
 }
