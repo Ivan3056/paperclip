@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { activityApi } from "../api/activity";
 import { agentsApi } from "../api/agents";
 import { issuesApi } from "../api/issues";
@@ -7,6 +7,7 @@ import { projectsApi } from "../api/projects";
 import { goalsApi } from "../api/goals";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
+import { useToast } from "../context/ToastContext";
 import { queryKeys } from "../lib/queryKeys";
 import { EmptyState } from "../components/EmptyState";
 import { ActivityRow } from "../components/ActivityRow";
@@ -18,12 +19,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { History } from "lucide-react";
+import { History, Trash2 } from "lucide-react";
 import type { Agent } from "@paperclipai/shared";
+import { Button } from "@/components/ui/button";
 
 export function Activity() {
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
+  const { pushToast } = useToast();
+  const queryClient = useQueryClient();
   const [filter, setFilter] = useState("all");
 
   useEffect(() => {
@@ -81,6 +85,36 @@ export function Activity() {
     return map;
   }, [issues]);
 
+  const { mutate: clearAll, isPending } = useMutation({
+    mutationFn: async () => {
+      if (!selectedCompanyId) throw new Error("No company selected");
+      // Clear all activity for this company
+      const events = data ?? [];
+      await Promise.all(events.map((e) => activityApi.delete(e.id)));
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.activity(selectedCompanyId!) });
+      pushToast({
+        title: "Activity cleared",
+        description: "All activity logs have been cleared.",
+      });
+    },
+    onError: (err) => {
+      pushToast({
+        title: "Failed to clear activity",
+        description: err instanceof Error ? err.message : "Unknown error",
+        tone: "error",
+      });
+    },
+  });
+
+  function handleClearAll() {
+    if (!data || data.length === 0) return;
+    if (window.confirm(`Clear all ${data.length} activity logs? This cannot be undone.`)) {
+      clearAll();
+    }
+  }
+
   if (!selectedCompanyId) {
     return <EmptyState icon={History} message="Select a company to view activity." />;
   }
@@ -100,7 +134,7 @@ export function Activity() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-end">
+      <div className="flex items-center justify-between">
         <Select value={filter} onValueChange={setFilter}>
           <SelectTrigger className="w-[140px] h-8 text-xs">
             <SelectValue placeholder="Filter by type" />
@@ -114,6 +148,19 @@ export function Activity() {
             ))}
           </SelectContent>
         </Select>
+
+        {data && data.length > 0 && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleClearAll}
+            disabled={isPending}
+            className="text-destructive hover:text-destructive hover:bg-destructive/10"
+          >
+            <Trash2 className="h-4 w-4 mr-2" />
+            Clear All
+          </Button>
+        )}
       </div>
 
       {error && <p className="text-sm text-destructive">{error.message}</p>}

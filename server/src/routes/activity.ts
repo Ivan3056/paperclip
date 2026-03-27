@@ -84,5 +84,12 @@ export function activityRoutes(db: Db) {
     res.json(result);
   });
 
+  router.delete("/activity/:id", async (req, res) => {
+    assertBoard(req);
+    const activityId = req.params.id as string;
+    await svc.delete(activityId);
+    res.json({ ok: true });
+  });
+
   return router;
 }

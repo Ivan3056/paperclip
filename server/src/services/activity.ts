@@ -159,5 +159,10 @@ export function activityService(db: Db) {
         .values(data)
         .returning()
         .then((rows) => rows[0]),
+
+    delete: (activityId: string) =>
+      db
+        .delete(activityLog)
+        .where(eq(activityLog.id, activityId)),
   };
 }
