@@ -12,6 +12,9 @@ import {
   Repeat,
   Settings,
   Terminal,
+  MoreVertical,
+  Trash2,
+  Building2,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { SidebarSection } from "./SidebarSection";
@@ -22,15 +25,27 @@ import { useDialog } from "../context/DialogContext";
 import { useCompany } from "../context/CompanyContext";
 import { useConsolePanel } from "../context/ConsoleContext";
 import { heartbeatsApi } from "../api/heartbeats";
+import { companiesApi } from "../api/companies";
 import { queryKeys } from "../lib/queryKeys";
 import { useInboxBadge } from "../hooks/useInboxBadge";
 import { Button } from "@/components/ui/button";
 import { PluginSlotOutlet } from "@/plugins/slots";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
+import { useState } from "react";
+import { useNavigate } from "@/lib/router";
 
 export function Sidebar() {
-  const { openNewIssue } = useDialog();
-  const { selectedCompanyId, selectedCompany } = useCompany();
+  const { openNewIssue, openConfirm } = useDialog();
+  const { selectedCompanyId, selectedCompany, companies, reloadCompanies } = useCompany();
   const { toggleConsole } = useConsolePanel();
+  const navigate = useNavigate();
+  const [companyMenuOpen, setCompanyMenuOpen] = useState(false);
   const inboxBadge = useInboxBadge(selectedCompanyId);
   const { data: liveRuns } = useQuery({
     queryKey: queryKeys.liveRuns(selectedCompanyId!),
@@ -42,6 +57,28 @@ export function Sidebar() {
 
   function openSearch() {
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true }));
+  }
+
+  function handleDeleteCompany() {
+    if (!selectedCompany) return;
+    
+    openConfirm({
+      title: "Delete Company",
+      description: `Are you sure you want to delete "${selectedCompany.name}"? This action cannot be undone and will delete all issues, projects, agents, and associated data.`,
+      confirmText: "Delete",
+      cancelText: "Cancel",
+      tone: "danger",
+      onConfirm: async () => {
+        try {
+          await companiesApi.delete(selectedCompany.id);
+          // Reload companies and redirect if needed
+          await reloadCompanies();
+          navigate("/companies");
+        } catch (err) {
+          console.error("Failed to delete company:", err);
+        }
+      },
+    });
   }
 
   const pluginContext = {
@@ -62,16 +99,35 @@ export function Sidebar() {
         <span className="flex-1 text-sm font-bold text-foreground truncate pl-1">
           {selectedCompany?.name ?? "Select company"}
         </span>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className="text-muted-foreground shrink-0"
-          onClick={openSearch}
-          title="Search (⌘K)"
-          aria-label="Search agents, issues, and projects (⌘K)"
-        >
-          <Search className="h-4 w-4" />
-        </Button>
+        <DropdownMenu open={companyMenuOpen} onOpenChange={setCompanyMenuOpen}>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="text-muted-foreground shrink-0 hover:text-foreground"
+              aria-label="Company options"
+            >
+              <MoreVertical className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent side="bottom" align="end">
+            <DropdownMenuItem
+              onClick={() => navigate("/companies")}
+              className="flex items-center gap-2"
+            >
+              <Building2 className="h-4 w-4" />
+              <span>All Companies</span>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onClick={handleDeleteCompany}
+              className="flex items-center gap-2 text-destructive focus:text-destructive"
+            >
+              <Trash2 className="h-4 w-4" />
+              <span>Delete Company</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       <nav className="flex-1 min-h-0 overflow-y-auto scrollbar-auto-hide flex flex-col gap-4 px-3 py-2">
