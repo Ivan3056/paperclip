@@ -1,5 +1,5 @@
 {
-  "id": "4469b6a5-68d7-460a-b705-f361fd357109",
+  "id": "553c91db-d8ac-4545-a7d2-bd57ce30ebf7",
   "prevId": "869b0102-2cb8-48e8-a6d8-cab88f0fa7a8",
   "version": "7",
   "dialect": "postgresql",
@@ -148,7 +148,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         },
         "activity_log_agent_id_agents_id_fk": {
@@ -174,7 +174,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
+          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },
@@ -301,7 +301,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
@@ -447,7 +447,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         },
         "agent_config_revisions_agent_id_agents_id_fk": {
@@ -647,7 +647,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
@@ -831,7 +831,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         },
         "agent_task_sessions_agent_id_agents_id_fk": {
@@ -857,7 +857,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
+          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },
@@ -1074,7 +1074,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         },
         "agent_wakeup_requests_agent_id_agents_id_fk": {
@@ -1294,7 +1294,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         },
         "agents_reports_to_agents_id_fk": {
@@ -1437,7 +1437,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         },
         "approval_comments_approval_id_approvals_id_fk": {
@@ -1594,7 +1594,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         },
         "approvals_requested_by_agent_id_agents_id_fk": {
@@ -3221,7 +3221,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
@@ -3531,7 +3531,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         },
         "company_secrets_created_by_agent_id_agents_id_fk": {
@@ -3983,7 +3983,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         },
         "cost_events_agent_id_agents_id_fk": {
@@ -5258,7 +5258,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         },
         "goals_parent_id_goals_id_fk": {
@@ -5448,7 +5448,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         },
         "heartbeat_run_events_run_id_heartbeat_runs_id_fk": {
@@ -5728,7 +5728,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         },
         "heartbeat_runs_agent_id_agents_id_fk": {
@@ -6564,7 +6564,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         },
         "issue_comments_issue_id_issues_id_fk": {
@@ -7586,12 +7586,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "working_summary": {
-          "name": "working_summary",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "status": {
           "name": "status",
           "type": "text",
@@ -8003,7 +7997,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         },
         "issues_project_id_projects_id_fk": {
@@ -9789,7 +9783,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
@@ -9920,7 +9914,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
@@ -10187,7 +10181,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         },
         "project_workspaces_project_id_projects_id_fk": {
@@ -10337,7 +10331,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         },
         "projects_goal_id_goals_id_fk": {
@@ -10350,7 +10344,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
+          "onDelete": "set null",
           "onUpdate": "no action"
         },
         "projects_lead_agent_id_agents_id_fk": {
