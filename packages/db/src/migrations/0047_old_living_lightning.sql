@@ -1,4 +1,4 @@
-CREATE TABLE "console_logs" (
+CREATE TABLE IF NOT EXISTS "console_logs" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"session_id" uuid NOT NULL,
 	"command" text NOT NULL,
@@ -9,7 +9,7 @@ CREATE TABLE "console_logs" (
 	"completed_at" timestamp with time zone
 );
 --> statement-breakpoint
-CREATE TABLE "console_sessions" (
+CREATE TABLE IF NOT EXISTS "console_sessions" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"company_id" text NOT NULL,
 	"user_id" text NOT NULL,
@@ -19,7 +19,7 @@ CREATE TABLE "console_sessions" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "issue_comments_reactions" (
+CREATE TABLE IF NOT EXISTS "issue_comments_reactions" (
 	"issue_id" text NOT NULL,
 	"comment_id" text NOT NULL,
 	"user_id" text NOT NULL,
@@ -28,7 +28,7 @@ CREATE TABLE "issue_comments_reactions" (
 	CONSTRAINT "issue_comments_reactions_issue_id_comment_id_user_id_reaction_pk" PRIMARY KEY("issue_id","comment_id","user_id","reaction")
 );
 --> statement-breakpoint
-CREATE TABLE "issue_run_attempts" (
+CREATE TABLE IF NOT EXISTS "issue_run_attempts" (
 	"issue_id" text NOT NULL,
 	"run_id" text NOT NULL,
 	"attempt_number" integer NOT NULL,
@@ -36,7 +36,7 @@ CREATE TABLE "issue_run_attempts" (
 	CONSTRAINT "issue_run_attempts_issue_id_run_id_pk" PRIMARY KEY("issue_id","run_id")
 );
 --> statement-breakpoint
-CREATE TABLE "issue_subscriptions" (
+CREATE TABLE IF NOT EXISTS "issue_subscriptions" (
 	"issue_id" text NOT NULL,
 	"user_id" text NOT NULL,
 	"subscribed" boolean DEFAULT true NOT NULL,
