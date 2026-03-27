@@ -46,7 +46,7 @@ function escapeShellCommand(cmd: string): string {
 /**
  * Execute a single command and return output
  */
-export async function executeCommand(req: ConsoleExecuteRequest): Promise<ConsoleExecuteResponse> {
+export async function executeCommand(req: { command: string; cwd?: string; timeout?: number }): Promise<ConsoleExecuteResponse> {
   const { command, cwd = process.cwd(), timeout } = req;
 
   return new Promise((resolve) => {
