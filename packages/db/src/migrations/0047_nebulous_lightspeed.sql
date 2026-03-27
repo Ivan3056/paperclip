@@ -95,8 +95,18 @@ ALTER TABLE "projects" DROP CONSTRAINT "projects_company_id_companies_id_fk";
 --> statement-breakpoint
 ALTER TABLE "projects" DROP CONSTRAINT "projects_goal_id_goals_id_fk";
 --> statement-breakpoint
-ALTER TABLE "heartbeat_runs" ADD COLUMN "last_output_at" timestamp with time zone;--> statement-breakpoint
-ALTER TABLE "issues" ADD COLUMN "working_summary" text;--> statement-breakpoint
+DO $$ BEGIN
+ ALTER TABLE "heartbeat_runs" ADD COLUMN "last_output_at" timestamp with time zone;
+EXCEPTION
+ WHEN duplicate_column THEN RAISE NOTICE 'column last_output_at already exists in heartbeat_runs';
+END $$;
+--> statement-breakpoint
+DO $$ BEGIN
+ ALTER TABLE "issues" ADD COLUMN "working_summary" text;
+EXCEPTION
+ WHEN duplicate_column THEN RAISE NOTICE 'column working_summary already exists in issues';
+END $$;
+--> statement-breakpoint
 ALTER TABLE "console_logs" ADD CONSTRAINT "console_logs_session_id_console_sessions_id_fk" FOREIGN KEY ("session_id") REFERENCES "public"."console_sessions"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "console_sessions" ADD CONSTRAINT "console_sessions_company_id_companies_id_fk" FOREIGN KEY ("company_id") REFERENCES "public"."companies"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "console_sessions" ADD CONSTRAINT "console_sessions_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
