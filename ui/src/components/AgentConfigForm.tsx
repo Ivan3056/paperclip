@@ -309,6 +309,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
     adapterType === "claude_local" ||
     adapterType === "codex_local" ||
     adapterType === "gemini_local" ||
+    adapterType === "hermes_local" ||
     adapterType === "opencode_local" ||
     adapterType === "pi_local" ||
     adapterType === "cursor";
@@ -328,6 +329,20 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
     enabled: Boolean(selectedCompanyId),
   });
   const models = fetchedModels ?? externalModels ?? [];
+
+  // Auto-detect model from Hermes config
+  const isHermesCreatable = adapterType === "hermes_local";
+  const {
+    data: detectedModelData,
+    refetch: refetchDetectedModel,
+  } = useQuery({
+    queryKey: selectedCompanyId
+      ? queryKeys.agents.adapterModels(selectedCompanyId, `${adapterType}__detect`)
+      : ["agents", "none", "detect-model", adapterType],
+    queryFn: () => agentsApi.detectModel(selectedCompanyId!, adapterType),
+    enabled: isHermesCreatable && Boolean(selectedCompanyId),
+  });
+  const detectedModel = detectedModelData?.model ?? null;
 
   const { data: companyAgents = [] } = useQuery({
     queryKey: selectedCompanyId ? queryKeys.agents.list(selectedCompanyId) : ["agents", "none", "list"],
@@ -714,7 +729,11 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                           ? "agent"
                         : adapterType === "opencode_local"
                           ? "opencode"
-                            : "claude"
+                        : adapterType === "pi_local"
+                          ? "pi"
+                        : adapterType === "hermes_local"
+                          ? "hermes"
+                          : "claude"
                   }
                 />
               </Field>
@@ -729,9 +748,12 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                 }
                 open={modelOpen}
                 onOpenChange={setModelOpen}
-                allowDefault={adapterType !== "opencode_local" && adapterType !== "pi_local"}
-                required={adapterType === "opencode_local" || adapterType === "pi_local"}
+                allowDefault={adapterType !== "opencode_local" && adapterType !== "pi_local" && adapterType !== "hermes_local"}
+                required={adapterType === "opencode_local" || adapterType === "pi_local" || adapterType === "hermes_local"}
                 groupByProvider={adapterType === "opencode_local" || adapterType === "pi_local"}
+                creatable={isHermesCreatable}
+                detectedModel={detectedModel}
+                onDetectModel={isHermesCreatable ? () => refetchDetectedModel() : undefined}
               />
               {fetchedModelsError && (
                 <p className="text-xs text-destructive">
@@ -1315,6 +1337,9 @@ function ModelDropdown({
   allowDefault,
   required,
   groupByProvider,
+  creatable,
+  detectedModel,
+  onDetectModel,
 }: {
   models: AdapterModel[];
   value: string;
@@ -1324,6 +1349,9 @@ function ModelDropdown({
   allowDefault: boolean;
   required: boolean;
   groupByProvider: boolean;
+  creatable?: boolean;
+  detectedModel?: string | null;
+  onDetectModel?: () => void;
 }) {
   const [modelSearch, setModelSearch] = useState("");
   const selected = models.find((m) => m.id === value);
@@ -1363,6 +1391,11 @@ function ModelDropdown({
       }));
   }, [filteredModels, groupByProvider]);
 
+  // For creatable mode: if search doesn't match any model, allow free-text input
+  const isCreatableMatch = creatable && modelSearch.trim() && !models.some(
+    (m) => m.id === modelSearch.trim(),
+  );
+
   return (
     <Field label="Model" hint={help.model}>
       <Popover
@@ -1383,16 +1416,84 @@ function ModelDropdown({
           </button>
         </PopoverTrigger>
         <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-1" align="start">
-          <input
-            className="w-full px-2 py-1.5 text-xs bg-transparent outline-none border-b border-border mb-1 placeholder:text-muted-foreground/50"
-            placeholder="Search models..."
-            value={modelSearch}
-            onChange={(e) => setModelSearch(e.target.value)}
-            autoFocus
-          />
+          <div className="relative mb-1">
+            <input
+              className="w-full px-2 py-1.5 pr-6 text-xs bg-transparent outline-none border-b border-border placeholder:text-muted-foreground/50"
+              placeholder="Search models... (type to create)"
+              value={modelSearch}
+              onChange={(e) => setModelSearch(e.target.value)}
+              autoFocus
+            />
+            {modelSearch && (
+              <button
+                type="button"
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                onClick={() => setModelSearch("")}
+              >
+                <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            )}
+          </div>
+          {/* Detect model button (Hermes) */}
+          {onDetectModel && (
+            <button
+              type="button"
+              className="flex items-center gap-1.5 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 text-muted-foreground"
+              onClick={() => { onDetectModel(); onOpenChange(false); }}
+            >
+              <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                <path d="M3 3v5h5" />
+              </svg>
+              Detect from Hermes config
+            </button>
+          )}
+          {/* Current selection pinned at top */}
+          {value && !models.some((m) => m.id === value) && (
+            <button
+              type="button"
+              className={cn(
+                "flex items-center w-full px-2 py-1.5 text-sm rounded bg-accent/50",
+              )}
+              onClick={() => {
+                onOpenChange(false);
+              }}
+            >
+              <span className="block w-full text-left truncate font-mono text-xs" title={value}>
+                {value}
+              </span>
+              <span className="shrink-0 ml-auto text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-green-500/15 text-green-400 border border-green-500/20">
+                current
+              </span>
+            </button>
+          )}
+          {/* Detected model from Hermes config */}
+          {detectedModel && detectedModel !== value && (
+            <button
+              type="button"
+              className={cn(
+                "flex items-center w-full px-2 py-1.5 text-sm rounded hover:bg-accent/50",
+              )}
+              onClick={() => {
+                onChange(detectedModel);
+                onOpenChange(false);
+              }}
+            >
+              <span className="block w-full text-left truncate font-mono text-xs" title={detectedModel}>
+                {detectedModel}
+              </span>
+              <span className="shrink-0 ml-auto text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-blue-500/15 text-blue-400 border border-blue-500/20">
+                detected
+              </span>
+            </button>
+          )}
           <div className="max-h-[240px] overflow-y-auto">
             {allowDefault && (
               <button
+                type="button"
                 className={cn(
                   "flex items-center gap-2 w-full px-2 py-1.5 text-sm rounded hover:bg-accent/50",
                   !value && "bg-accent",
@@ -1415,6 +1516,7 @@ function ModelDropdown({
                 {group.entries.map((m) => (
                   <button
                     key={m.id}
+                    type="button"
                     className={cn(
                       "flex items-center w-full px-2 py-1.5 text-sm rounded hover:bg-accent/50",
                       m.id === value && "bg-accent",
@@ -1431,7 +1533,22 @@ function ModelDropdown({
                 ))}
               </div>
             ))}
-            {filteredModels.length === 0 && (
+            {/* Creatable: free-text from search input */}
+            {isCreatableMatch && (
+              <button
+                type="button"
+                className="flex items-center w-full px-2 py-1.5 text-sm rounded hover:bg-accent/50 text-muted-foreground border-t border-border mt-1"
+                onClick={() => {
+                  onChange(modelSearch.trim());
+                  onOpenChange(false);
+                }}
+              >
+                <span className="block w-full text-left truncate font-mono text-xs">
+                  Use &quot;{modelSearch.trim()}&quot;
+                </span>
+              </button>
+            )}
+            {filteredModels.length === 0 && !isCreatableMatch && (
               <p className="px-2 py-1.5 text-xs text-muted-foreground">No models found.</p>
             )}
           </div>
