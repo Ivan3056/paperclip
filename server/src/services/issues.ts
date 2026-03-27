@@ -15,6 +15,8 @@ import {
   issueComments,
   issueCommentsReactions,
   issueDocuments,
+  issueInboxArchives,
+  issueLabels,
   issueReadStates,
   issueRunAttempts,
   issueSubscriptions,

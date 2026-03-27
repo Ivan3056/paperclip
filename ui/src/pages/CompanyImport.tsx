@@ -32,7 +32,7 @@ import {
 } from "lucide-react";
 import { Field, adapterLabels } from "../components/agent-config-primitives";
 import { defaultCreateValues } from "../components/agent-config-defaults";
-import { getUIAdapter, listUIAdapters } from "../adapters";
+import { getUIAdapter } from "../adapters";
 import type { CreateConfigValues } from "@paperclipai/adapter-utils";
 import {
   type FileTreeNode,
@@ -512,10 +512,7 @@ function ConflictResolutionList({
 
 // ── Adapter type options for import ───────────────────────────────────
 
-const IMPORT_ADAPTER_OPTIONS: { value: string; label: string }[] = listUIAdapters().map((adapter) => ({
-  value: adapter.type,
-  label: adapterLabels[adapter.type] ?? adapter.label,
-}));
+const IMPORT_ADAPTER_OPTIONS: { value: string; label: string }[] = [];
 
 // ── Adapter picker for imported agents ───────────────────────────────
 

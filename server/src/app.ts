@@ -292,9 +292,6 @@ export async function createApp(
 
   jobCoordinator.start();
   scheduler.start();
-  void heartbeat.reconcileAssignedIssueWakeups({ requestedByActorId: "server_startup" }).catch((err) => {
-    logger.error({ err }, "Failed to reconcile assigned issue wakeups on startup");
-  });
   void toolDispatcher.initialize().catch((err) => {
     logger.error({ err }, "Failed to initialize plugin tool dispatcher");
   });

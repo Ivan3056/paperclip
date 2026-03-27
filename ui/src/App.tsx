@@ -124,9 +124,9 @@ function boardRoutes() {
       <Route path="dashboard" element={<Dashboard />} />
       <Route path="onboarding" element={<OnboardingRoutePage />} />
       <Route path="companies" element={<Companies />} />
-      <Route path="company/settings" element={<CompanySettings />} />
-      <Route path="company/export/*" element={<CompanyExport />} />
-      <Route path="company/import" element={<CompanyImport />} />
+      <Route path="company/settings" element={<UnprefixedBoardRedirect />} />
+      <Route path="company/export/*" element={<UnprefixedBoardRedirect />} />
+      <Route path="company/import" element={<UnprefixedBoardRedirect />} />
       <Route path="skills/*" element={<CompanySkills />} />
       <Route path="settings" element={<LegacySettingsRedirect />} />
       <Route path="settings/*" element={<LegacySettingsRedirect />} />

@@ -24,7 +24,7 @@ import { createApp } from "./app.js";
 import { loadConfig } from "./config.js";
 import { logger } from "./middleware/logger.js";
 import { setupLiveEventsWebSocketServer } from "./realtime/live-events-ws.js";
-import { DEFAULT_ORPHANED_RUN_STALE_THRESHOLD_MS, heartbeatService } from "./services/index.js";
+import { heartbeatService } from "./services/index.js";
 import { createStorageServiceFromConfig } from "./storage/index.js";
 import { printStartupBanner } from "./startup-banner.js";
 import { getBoardClaimWarningUrl, initializeBoardClaimChallenge } from "./board-claim.js";
@@ -453,6 +453,7 @@ const uiMode = config.uiDevMiddleware ? "vite-dev" : config.serveUi ? "static" :
 const storageService = createStorageServiceFromConfig(config);
 const app = await createApp(db as any, {
   uiMode,
+  serverPort: config.port,
   storageService,
   deploymentMode: config.deploymentMode,
   deploymentExposure: config.deploymentExposure,
@@ -481,6 +482,9 @@ process.env.PAPERCLIP_API_URL = `http://${runtimeApiHost}:${listenPort}`;
 
 setupLiveEventsWebSocketServer(server, db as any, {
   deploymentMode: config.deploymentMode,
+  deploymentExposure: config.deploymentExposure,
+  allowedHostnames: config.allowedHostnames,
+  bindHost: config.host,
   resolveSessionFromHeaders,
 });
 
@@ -490,7 +494,7 @@ if (config.heartbeatSchedulerEnabled) {
   // Only reap runs after a staleness window. This avoids a second server process
   // instantly killing healthy runs that are being tracked by another process.
   void heartbeat
-    .reapOrphanedRuns({ staleThresholdMs: DEFAULT_ORPHANED_RUN_STALE_THRESHOLD_MS })
+    .reapOrphanedRuns({ staleThresholdMs: 2 * 60 * 1000 })
     .catch((err) => {
       logger.error({ err }, "startup heartbeat recovery failed");
     });
@@ -509,7 +513,7 @@ if (config.heartbeatSchedulerEnabled) {
 
     // Periodically reap runs whose liveness has gone stale
     void heartbeat
-      .reapOrphanedRuns({ staleThresholdMs: DEFAULT_ORPHANED_RUN_STALE_THRESHOLD_MS })
+      .reapOrphanedRuns({ staleThresholdMs: 2 * 60 * 1000 })
       .catch((err) => {
         logger.error({ err }, "periodic reap of orphaned heartbeat runs failed");
       });
