@@ -1,6 +1,6 @@
 FROM node:lts-trixie-slim AS base
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates curl git \
+  && apt-get install -y --no-install-recommends ca-certificates curl git openssh-client \
   && rm -rf /var/lib/apt/lists/*
 RUN corepack enable
 
@@ -56,6 +56,10 @@ ENV NODE_ENV=production \
 
 VOLUME ["/paperclip"]
 EXPOSE 3100
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+  CMD curl -fsS http://localhost:3100/api/health > /dev/null || exit 1
 
 USER node
+RUN git config --global credential.helper \
+  '!f() { echo "username=x-access-token"; echo "password=${GITHUB_TOKEN}"; }; f'
 CMD ["node", "--import", "./server/node_modules/tsx/dist/loader.mjs", "server/dist/index.js"]
