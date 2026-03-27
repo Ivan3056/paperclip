@@ -19,9 +19,11 @@ import {
   renderTemplate,
   joinPromptSections,
   runChildProcess,
-  applyBillingModeOverride,
+  sleep,
+  rateLimitBackoffMs,
+  RATE_LIMIT_RETRY_DEFAULTS,
 } from "@paperclipai/adapter-utils/server-utils";
-import { parseCodexJsonl, isCodexUnknownSessionError } from "./parse.js";
+import { parseCodexJsonl, isCodexUnknownSessionError, detectCodexRateLimit } from "./parse.js";
 import { pathExists, prepareManagedCodexHome, resolveManagedCodexHomeDir, resolveSharedCodexHomeDir } from "./codex-home.js";
 import { resolveCodexDesiredSkillNames } from "./skills.js";
 
@@ -58,10 +60,9 @@ function hasNonEmptyEnvValue(env: Record<string, string>, key: string): boolean 
   return typeof raw === "string" && raw.trim().length > 0;
 }
 
-function resolveCodexBillingType(env: Record<string, string>, billingMode: string): "api" | "subscription" {
+function resolveCodexBillingType(env: Record<string, string>): "api" | "subscription" {
   // Codex uses API-key auth when OPENAI_API_KEY is present; otherwise rely on local login/session auth.
-  const autoDetected = hasNonEmptyEnvValue(env, "OPENAI_API_KEY") ? "api" : "subscription";
-  return applyBillingModeOverride(autoDetected, billingMode);
+  return hasNonEmptyEnvValue(env, "OPENAI_API_KEY") ? "api" : "subscription";
 }
 
 function resolveCodexBiller(env: Record<string, string>, billingType: "api" | "subscription"): string {
@@ -382,12 +383,11 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       (entry): entry is [string, string] => typeof entry[1] === "string",
     ),
   );
-  const billingType = resolveCodexBillingType(effectiveEnv, asString(config.billingMode, "auto"));
+  const billingType = resolveCodexBillingType(effectiveEnv);
   const runtimeEnv = ensurePathInEnv(effectiveEnv);
   await ensureCommandResolvable(command, cwd, runtimeEnv);
 
   const timeoutSec = asNumber(config.timeoutSec, 0);
-  const idleTimeoutSec = asNumber(config.idleTimeoutSec, 600);
   const graceSec = asNumber(config.graceSec, 20);
   const extraArgs = (() => {
     const fromExtraArgs = asStringArray(config.extraArgs);
@@ -512,7 +512,6 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       env,
       stdin: prompt,
       timeoutSec,
-      idleTimeoutSec,
       graceSec,
       onSpawn,
       onLog: async (stream, chunk) => {
@@ -537,7 +536,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   };
 
   const toResult = (
-    attempt: { proc: { exitCode: number | null; signal: string | null; timedOut: boolean; idleTimedOut?: boolean; stdout: string; stderr: string }; rawStderr: string; parsed: ReturnType<typeof parseCodexJsonl> },
+    attempt: { proc: { exitCode: number | null; signal: string | null; timedOut: boolean; stdout: string; stderr: string }; rawStderr: string; parsed: ReturnType<typeof parseCodexJsonl> },
     clearSessionOnMissingSession = false,
   ): AdapterExecutionResult => {
     if (attempt.proc.timedOut) {
@@ -546,15 +545,6 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         signal: attempt.proc.signal,
         timedOut: true,
         errorMessage: `Timed out after ${timeoutSec}s`,
-        clearSession: clearSessionOnMissingSession,
-      };
-    }
-    if (attempt.proc.idleTimedOut) {
-      return {
-        exitCode: attempt.proc.exitCode,
-        signal: attempt.proc.signal,
-        timedOut: true,
-        errorMessage: `Idle timeout: no output for ${idleTimeoutSec}s`,
         clearSession: clearSessionOnMissingSession,
       };
     }
@@ -576,6 +566,12 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       stderrLine ||
       `Codex exited with code ${attempt.proc.exitCode ?? -1}`;
 
+    const rateLimitCheck = detectCodexRateLimit({
+      stdout: attempt.proc.stdout,
+      stderr: attempt.proc.stderr,
+      errorMessage: attempt.parsed.errorMessage,
+    });
+
     return {
       exitCode: attempt.proc.exitCode,
       signal: attempt.proc.signal,
@@ -584,6 +580,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         (attempt.proc.exitCode ?? 0) === 0
           ? null
           : fallbackErrorMessage,
+      errorCode: (attempt.proc.exitCode ?? 0) !== 0 && rateLimitCheck.rateLimited ? "rate_limit_exhausted" : null,
       usage: attempt.parsed.usage,
       sessionId: resolvedSessionId,
       sessionParams: resolvedSessionParams,
@@ -602,11 +599,21 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     };
   };
 
+  const isRateLimited = (attempt: { proc: { exitCode: number | null; timedOut: boolean; stdout: string; stderr: string }; parsed: ReturnType<typeof parseCodexJsonl> }): boolean => {
+    if (attempt.proc.timedOut || (attempt.proc.exitCode ?? 0) === 0) return false;
+    return detectCodexRateLimit({
+      stdout: attempt.proc.stdout,
+      stderr: attempt.proc.stderr,
+      errorMessage: attempt.parsed.errorMessage,
+    }).rateLimited;
+  };
+
   const initial = await runAttempt(sessionId);
+
+  // Handle unknown session error — retry once with fresh session
   if (
     sessionId &&
     !initial.proc.timedOut &&
-    !initial.proc.idleTimedOut &&
     (initial.proc.exitCode ?? 0) !== 0 &&
     isCodexUnknownSessionError(initial.proc.stdout, initial.rawStderr)
   ) {
@@ -616,6 +623,24 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     );
     const retry = await runAttempt(null);
     return toResult(retry, true);
+  }
+
+  // Handle rate-limit (429) — retry with exponential backoff
+  if (isRateLimited(initial)) {
+    let lastAttempt = initial;
+    for (let i = 0; i < RATE_LIMIT_RETRY_DEFAULTS.maxRetries; i++) {
+      const delayMs = rateLimitBackoffMs(i);
+      await onLog(
+        "stdout",
+        `[paperclip] Codex returned 429/rate-limit. Retrying in ${Math.round(delayMs / 1000)}s (attempt ${i + 2}/${RATE_LIMIT_RETRY_DEFAULTS.maxRetries + 1}).\n`,
+      );
+      await sleep(delayMs);
+      lastAttempt = await runAttempt(sessionId);
+      if (!isRateLimited(lastAttempt)) {
+        return toResult(lastAttempt);
+      }
+    }
+    return toResult(lastAttempt);
   }
 
   return toResult(initial);

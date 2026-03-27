@@ -22,12 +22,15 @@ import {
   redactEnvForLogs,
   renderTemplate,
   runChildProcess,
-  applyBillingModeOverride,
+  sleep,
+  rateLimitBackoffMs,
+  RATE_LIMIT_RETRY_DEFAULTS,
 } from "@paperclipai/adapter-utils/server-utils";
 import { DEFAULT_GEMINI_LOCAL_MODEL } from "../index.js";
 import {
   describeGeminiFailure,
   detectGeminiAuthRequired,
+  detectGeminiQuotaExhausted,
   isGeminiTurnLimitResult,
   isGeminiUnknownSessionError,
   parseGeminiJsonl,
@@ -41,11 +44,10 @@ function hasNonEmptyEnvValue(env: Record<string, string>, key: string): boolean 
   return typeof raw === "string" && raw.trim().length > 0;
 }
 
-function resolveGeminiBillingType(env: Record<string, string>, billingMode: string): "api" | "subscription" {
-  const autoDetected = hasNonEmptyEnvValue(env, "GEMINI_API_KEY") || hasNonEmptyEnvValue(env, "GOOGLE_API_KEY")
+function resolveGeminiBillingType(env: Record<string, string>): "api" | "subscription" {
+  return hasNonEmptyEnvValue(env, "GEMINI_API_KEY") || hasNonEmptyEnvValue(env, "GOOGLE_API_KEY")
     ? "api"
     : "subscription";
-  return applyBillingModeOverride(autoDetected, billingMode);
 }
 
 function renderPaperclipEnvNote(env: Record<string, string>): string {
@@ -219,7 +221,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       (entry): entry is [string, string] => typeof entry[1] === "string",
     ),
   );
-  const billingType = resolveGeminiBillingType(effectiveEnv, asString(config.billingMode, "auto"));
+  const billingType = resolveGeminiBillingType(effectiveEnv);
   const runtimeEnv = ensurePathInEnv(effectiveEnv);
   await ensureCommandResolvable(command, cwd, runtimeEnv);
 
@@ -424,7 +426,17 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       signal: attempt.proc.signal,
       timedOut: false,
       errorMessage: (attempt.proc.exitCode ?? 0) === 0 ? null : fallbackErrorMessage,
-      errorCode: (attempt.proc.exitCode ?? 0) !== 0 && authMeta.requiresAuth ? "gemini_auth_required" : null,
+      errorCode: (attempt.proc.exitCode ?? 0) !== 0
+        ? (authMeta.requiresAuth
+          ? "gemini_auth_required"
+          : detectGeminiQuotaExhausted({
+              parsed: attempt.parsed.resultEvent,
+              stdout: attempt.proc.stdout,
+              stderr: attempt.proc.stderr,
+            }).exhausted
+            ? "rate_limit_exhausted"
+            : null)
+        : null,
       usage: attempt.parsed.usage,
       sessionId: resolvedSessionId,
       sessionParams: resolvedSessionParams,
@@ -444,7 +456,18 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     };
   };
 
+  const isRateLimited = (attempt: { proc: { exitCode: number | null; timedOut: boolean; stdout: string; stderr: string }; parsed: ReturnType<typeof parseGeminiJsonl> }): boolean => {
+    if (attempt.proc.timedOut || (attempt.proc.exitCode ?? 0) === 0) return false;
+    return detectGeminiQuotaExhausted({
+      parsed: attempt.parsed.resultEvent,
+      stdout: attempt.proc.stdout,
+      stderr: attempt.proc.stderr,
+    }).exhausted;
+  };
+
   const initial = await runAttempt(sessionId);
+
+  // Handle unknown session error — retry once with fresh session
   if (
     sessionId &&
     !initial.proc.timedOut &&
@@ -457,6 +480,24 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     );
     const retry = await runAttempt(null);
     return toResult(retry, true, true);
+  }
+
+  // Handle rate-limit (429) — retry with exponential backoff
+  if (isRateLimited(initial)) {
+    let lastAttempt = initial;
+    for (let i = 0; i < RATE_LIMIT_RETRY_DEFAULTS.maxRetries; i++) {
+      const delayMs = rateLimitBackoffMs(i);
+      await onLog(
+        "stdout",
+        `[paperclip] Gemini returned 429/rate-limit. Retrying in ${Math.round(delayMs / 1000)}s (attempt ${i + 2}/${RATE_LIMIT_RETRY_DEFAULTS.maxRetries + 1}).\n`,
+      );
+      await sleep(delayMs);
+      lastAttempt = await runAttempt(sessionId);
+      if (!isRateLimited(lastAttempt)) {
+        return toResult(lastAttempt);
+      }
+    }
+    return toResult(lastAttempt);
   }
 
   return toResult(initial);
