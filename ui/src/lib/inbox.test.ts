@@ -135,6 +135,7 @@ function makeIssue(id: string, isUnreadForMe: boolean): Issue {
     parentId: null,
     title: `Issue ${id}`,
     description: null,
+    workingSummary: null,
     status: "todo",
     priority: "medium",
     assigneeAgentId: null,

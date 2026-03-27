@@ -358,6 +358,7 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
           parentId: input.parentId ?? null,
           title: input.title,
           description: input.description ?? null,
+          workingSummary: null,
           status: "todo",
           priority: input.priority ?? "medium",
           assigneeAgentId: input.assigneeAgentId ?? null,
