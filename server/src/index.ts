@@ -606,7 +606,7 @@ export async function startServer(): Promise<StartedServer> {
   if (config.heartbeatSchedulerEnabled) {
     const heartbeat = heartbeatService(db as any);
     const routines = routineService(db as any);
-  
+
     // Reap orphaned runs at startup (no threshold -- runningProcesses is empty).
     // Must complete before setInterval to prevent timer ticks from coalescing into zombies.
     for (let attempt = 1; attempt <= 2; attempt++) {
@@ -630,9 +630,17 @@ export async function startServer(): Promise<StartedServer> {
     }
 
     // Resume any persisted queued runs that were waiting on the previous process.
-    void heartbeat.resumeQueuedRuns().catch((err) => {
-      logger.error({ err }, "startup resumeQueuedRuns failed");
-    });
+    void heartbeat
+      .resumeQueuedRuns()
+      .then(() => heartbeat.recoverAssignedIssueWakeupsOnStartup())
+      .then((result) => {
+        if (result.enqueued > 0) {
+          logger.info({ ...result }, "startup heartbeat assignment recovery enqueued runs");
+        }
+      })
+      .catch((err) => {
+        logger.error({ err }, "startup heartbeat recovery failed");
+      });
 
     // Timer ticks start AFTER startup reap completes
     setInterval(() => {
