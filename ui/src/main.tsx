@@ -13,6 +13,7 @@ import { SidebarProvider } from "./context/SidebarContext";
 import { DialogProvider } from "./context/DialogContext";
 import { ToastProvider } from "./context/ToastContext";
 import { ThemeProvider } from "./context/ThemeContext";
+import { ConsoleProvider } from "./context/ConsoleContext";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { initPluginBridge } from "./plugins/bridge-init";
 import { PluginLauncherProvider } from "./plugins/launchers";
@@ -51,7 +52,9 @@ createRoot(document.getElementById("root")!).render(
                       <PanelProvider>
                         <PluginLauncherProvider>
                           <DialogProvider>
-                            <App />
+                            <ConsoleProvider>
+                              <App />
+                            </ConsoleProvider>
                           </DialogProvider>
                         </PluginLauncherProvider>
                       </PanelProvider>
