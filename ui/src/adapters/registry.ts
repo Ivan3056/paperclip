@@ -8,6 +8,7 @@ import { openCodeLocalUIAdapter } from "./opencode-local";
 import { piLocalUIAdapter } from "./pi-local";
 import { hermesLocalUIAdapter } from "./hermes-local";
 import { openClawGatewayUIAdapter } from "./openclaw-gateway";
+import { kiroLocalUIAdapter } from "./kiro-local";
 import { processUIAdapter } from "./process";
 import { httpUIAdapter } from "./http";
 
@@ -20,6 +21,7 @@ const uiAdapters: UIAdapterModule[] = [
   hermesLocalUIAdapter,
   cursorLocalUIAdapter,
   openClawGatewayUIAdapter,
+  kiroLocalUIAdapter,
   processUIAdapter,
   httpUIAdapter,
 ];

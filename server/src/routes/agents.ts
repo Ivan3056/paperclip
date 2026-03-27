@@ -43,8 +43,8 @@ import {
   workspaceOperationService,
 } from "../services/index.js";
 import { conflict, forbidden, notFound, unprocessable } from "../errors.js";
-import { assertBoard, assertCompanyAccess, assertInstanceAdmin, getActorInfo } from "./authz.js";
-import { findServerAdapter, listAdapterModels, detectAdapterModel } from "../adapters/index.js";
+import { assertBoard, assertCompanyAccess, getActorInfo } from "./authz.js";
+import { findServerAdapter, listAdapterModels } from "../adapters/index.js";
 import { redactEventPayload } from "../redaction.js";
 import { redactCurrentUserValue } from "../log-redaction.js";
 import { renderOrgChartSvg, renderOrgChartPng, type OrgNode, type OrgChartStyle, ORG_CHART_STYLES } from "./org-chart-svg.js";
@@ -69,17 +69,11 @@ export function agentRoutes(db: Db) {
     gemini_local: "instructionsFilePath",
     opencode_local: "instructionsFilePath",
     cursor: "instructionsFilePath",
+    kiro_local: "instructionsFilePath",
     pi_local: "instructionsFilePath",
   };
   const DEFAULT_MANAGED_INSTRUCTIONS_ADAPTER_TYPES = new Set(Object.keys(DEFAULT_INSTRUCTIONS_PATH_KEYS));
   const KNOWN_INSTRUCTIONS_PATH_KEYS = new Set(["instructionsFilePath", "agentsMdPath"]);
-  const KNOWN_INSTRUCTIONS_BUNDLE_KEYS = [
-    "instructionsBundleMode",
-    "instructionsRootPath",
-    "instructionsEntryFile",
-    "instructionsFilePath",
-    "agentsMdPath",
-  ] as const;
 
   const router = Router();
   const svc = agentService(db);
@@ -310,24 +304,6 @@ export function agentRoutes(db: Db) {
     return trimmed.length > 0 ? trimmed : null;
   }
 
-  function preserveInstructionsBundleConfig(
-    existingAdapterConfig: Record<string, unknown>,
-    nextAdapterConfig: Record<string, unknown>,
-  ) {
-    const nextKeys = new Set(Object.keys(nextAdapterConfig));
-    if (KNOWN_INSTRUCTIONS_BUNDLE_KEYS.some((key) => nextKeys.has(key))) {
-      return nextAdapterConfig;
-    }
-
-    const merged = { ...nextAdapterConfig };
-    for (const key of KNOWN_INSTRUCTIONS_BUNDLE_KEYS) {
-      if (merged[key] === undefined && existingAdapterConfig[key] !== undefined) {
-        merged[key] = existingAdapterConfig[key];
-      }
-    }
-    return merged;
-  }
-
   function parseBooleanLike(value: unknown): boolean | null {
     if (typeof value === "boolean") return value;
     if (typeof value === "number") {
@@ -401,6 +377,9 @@ export function agentRoutes(db: Db) {
     // OpenCode requires explicit model selection — no default
     if (adapterType === "cursor" && !asNonEmptyString(next.model)) {
       next.model = DEFAULT_CURSOR_LOCAL_MODEL;
+    }
+    if (adapterType === "kiro_local" && !asNonEmptyString(next.model)) {
+      next.model = "auto";
     }
     return ensureGatewayDeviceKey(adapterType, next);
   }
@@ -671,15 +650,6 @@ export function agentRoutes(db: Db) {
     res.json(models);
   });
 
-  router.get("/companies/:companyId/adapters/:type/detect-model", async (req, res) => {
-    const companyId = req.params.companyId as string;
-    assertCompanyAccess(req, companyId);
-    const type = req.params.type as string;
-
-    const detected = await detectAdapterModel(type);
-    res.json(detected ?? { model: null, provider: null, source: null });
-  });
-
   router.post(
     "/companies/:companyId/adapters/:type/test-environment",
     validate(testAdapterEnvironmentSchema),
@@ -864,7 +834,17 @@ export function agentRoutes(db: Db) {
   });
 
   router.get("/instance/scheduler-heartbeats", async (req, res) => {
-    assertInstanceAdmin(req);
+    assertBoard(req);
+
+    const accessConditions = [];
+    if (req.actor.source !== "local_implicit" && !req.actor.isInstanceAdmin) {
+      const allowedCompanyIds = req.actor.companyIds ?? [];
+      if (allowedCompanyIds.length === 0) {
+        res.json([]);
+        return;
+      }
+      accessConditions.push(inArray(agentsTable.companyId, allowedCompanyIds));
+    }
 
     const rows = await db
       .select({
@@ -882,6 +862,7 @@ export function agentRoutes(db: Db) {
       })
       .from(agentsTable)
       .innerJoin(companies, eq(agentsTable.companyId, companies.id))
+      .where(accessConditions.length > 0 ? and(...accessConditions) : undefined)
       .orderBy(companies.name, agentsTable.name);
 
     const items: InstanceSchedulerHeartbeatAgent[] = rows
@@ -910,6 +891,7 @@ export function agentRoutes(db: Db) {
         };
       })
       .filter((item) =>
+        item.intervalSec > 0 &&
         item.status !== "paused" &&
         item.status !== "terminated" &&
         item.status !== "pending_approval",
@@ -985,20 +967,10 @@ export function agentRoutes(db: Db) {
     }
 
     const issuesSvc = issueService(db);
-    const listFilters: Parameters<typeof issuesSvc.list>[1] = {
+    const rows = await issuesSvc.list(req.actor.companyId, {
       assigneeAgentId: req.actor.agentId,
       status: "todo,in_progress,blocked",
-    };
-
-    const currentIssueId = typeof req.query.currentIssueId === "string" ? req.query.currentIssueId : undefined;
-    if (currentIssueId) {
-      const currentIssue = await issuesSvc.getById(currentIssueId);
-      if (currentIssue) {
-        listFilters.projectId = currentIssue.projectId ?? null;
-      }
-    }
-
-    const rows = await issuesSvc.list(req.actor.companyId, listFilters);
+    });
 
     res.json(
       rows.map((issue) => ({
@@ -1721,8 +1693,6 @@ export function agentRoutes(db: Db) {
     }
 
     const patchData = { ...(req.body as Record<string, unknown>) };
-    const replaceAdapterConfig = patchData.replaceAdapterConfig === true;
-    delete patchData.replaceAdapterConfig;
     if (Object.prototype.hasOwnProperty.call(patchData, "adapterConfig")) {
       const adapterConfig = asRecord(patchData.adapterConfig);
       if (!adapterConfig) {
@@ -1744,30 +1714,25 @@ export function agentRoutes(db: Db) {
       Object.prototype.hasOwnProperty.call(patchData, "adapterType") ||
       Object.prototype.hasOwnProperty.call(patchData, "adapterConfig");
     if (touchesAdapterConfiguration) {
-      const existingAdapterConfig = asRecord(existing.adapterConfig) ?? {};
-      const changingAdapterType =
-        typeof patchData.adapterType === "string" && patchData.adapterType !== existing.adapterType;
-      const requestedAdapterConfig = Object.prototype.hasOwnProperty.call(patchData, "adapterConfig")
+      let rawEffectiveAdapterConfig = Object.prototype.hasOwnProperty.call(patchData, "adapterConfig")
         ? (asRecord(patchData.adapterConfig) ?? {})
-        : null;
+        : (asRecord(existing.adapterConfig) ?? {});
+      // Defense-in-depth: when adapter type is changing, merge shared fields
+      // from the existing config so cwd, instructionsFilePath, etc. survive.
       if (
-        requestedAdapterConfig
-        && replaceAdapterConfig
-        && KNOWN_INSTRUCTIONS_BUNDLE_KEYS.some((key) =>
-          existingAdapterConfig[key] !== undefined && requestedAdapterConfig[key] === undefined,
-        )
+        Object.prototype.hasOwnProperty.call(patchData, "adapterType") &&
+        patchData.adapterType !== existing.adapterType
       ) {
-        await assertCanManageInstructionsPath(req, existing);
-      }
-      let rawEffectiveAdapterConfig = requestedAdapterConfig ?? existingAdapterConfig;
-      if (requestedAdapterConfig && !changingAdapterType && !replaceAdapterConfig) {
-        rawEffectiveAdapterConfig = { ...existingAdapterConfig, ...requestedAdapterConfig };
-      }
-      if (changingAdapterType) {
-        rawEffectiveAdapterConfig = preserveInstructionsBundleConfig(
-          existingAdapterConfig,
-          rawEffectiveAdapterConfig,
-        );
+        const SHARED_ADAPTER_CONFIG_KEYS = [
+          "cwd", "instructionsFilePath", "command", "extraArgs",
+          "env", "timeoutSec", "graceSec",
+        ];
+        const existingConfig = asRecord(existing.adapterConfig) ?? {};
+        const shared: Record<string, unknown> = {};
+        for (const key of SHARED_ADAPTER_CONFIG_KEYS) {
+          if (existingConfig[key] !== undefined) shared[key] = existingConfig[key];
+        }
+        rawEffectiveAdapterConfig = { ...shared, ...rawEffectiveAdapterConfig };
       }
       const effectiveAdapterConfig = applyCreateDefaultsByAdapterType(
         requestedAdapterType,
@@ -2102,8 +2067,6 @@ export function agentRoutes(db: Db) {
       agentId: heartbeatRuns.agentId,
       agentName: agentsTable.name,
       adapterType: agentsTable.adapterType,
-      errorCode: heartbeatRuns.errorCode,
-      lastOutputAt: heartbeatRuns.lastOutputAt,
       issueId: sql<string | null>`${heartbeatRuns.contextSnapshot} ->> 'issueId'`.as("issueId"),
     };
 
@@ -2271,8 +2234,6 @@ export function agentRoutes(db: Db) {
         agentId: heartbeatRuns.agentId,
         agentName: agentsTable.name,
         adapterType: agentsTable.adapterType,
-        errorCode: heartbeatRuns.errorCode,
-        lastOutputAt: heartbeatRuns.lastOutputAt,
       })
       .from(heartbeatRuns)
       .innerJoin(agentsTable, eq(heartbeatRuns.agentId, agentsTable.id))

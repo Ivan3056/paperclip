@@ -1,6 +1,5 @@
 import type { ServerAdapterModule } from "./types.js";
 import { getAdapterSessionManagement } from "@paperclipai/adapter-utils";
-import { normalizeAgentAdapterType } from "@paperclipai/shared";
 import {
   execute as claudeExecute,
   listClaudeSkills,
@@ -71,14 +70,23 @@ import {
   execute as hermesExecute,
   testEnvironment as hermesTestEnvironment,
   sessionCodec as hermesSessionCodec,
-  listSkills as hermesListSkills,
-  syncSkills as hermesSyncSkills,
-} from "@paperclipai/adapter-hermes-local/server";
+} from "hermes-paperclip-adapter/server";
 import {
   agentConfigurationDoc as hermesAgentConfigurationDoc,
   models as hermesModels,
-} from "@paperclipai/adapter-hermes-local";
-import { detectModel as detectModelFromHermes } from "@paperclipai/adapter-hermes-local/server";
+} from "hermes-paperclip-adapter";
+import {
+  execute as kiroExecute,
+  testEnvironment as kiroTestEnvironment,
+  sessionCodec as kiroSessionCodec,
+  listKiroModels,
+  listKiroSkills,
+  syncKiroSkills,
+} from "@paperclipai/adapter-kiro-local/server";
+import {
+  agentConfigurationDoc as kiroAgentConfigurationDoc,
+  models as kiroModels,
+} from "@paperclipai/adapter-kiro-local";
 import { processAdapter } from "./process/index.js";
 import { httpAdapter } from "./http/index.js";
 
@@ -175,22 +183,31 @@ const piLocalAdapter: ServerAdapterModule = {
   agentConfigurationDoc: piAgentConfigurationDoc,
 };
 
-const hermesLocalAdapter: ServerAdapterModule & {
-  detectModel?: () => Promise<{ model: string; provider: string; source: string } | null>;
-} = {
+const hermesLocalAdapter: ServerAdapterModule = {
   type: "hermes_local",
   execute: hermesExecute,
   testEnvironment: hermesTestEnvironment,
   sessionCodec: hermesSessionCodec,
-  listSkills: hermesListSkills,
-  syncSkills: hermesSyncSkills,
   models: hermesModels,
   supportsLocalAgentJwt: true,
   agentConfigurationDoc: hermesAgentConfigurationDoc,
-  detectModel: () => detectModelFromHermes(),
 };
 
-const adaptersByType = new Map<string, ServerAdapterModule & { detectModel?: () => Promise<{ model: string; provider: string; source: string } | null> }>(
+const kiroLocalAdapter: ServerAdapterModule = {
+  type: "kiro_local",
+  execute: kiroExecute,
+  testEnvironment: kiroTestEnvironment,
+  listSkills: listKiroSkills,
+  syncSkills: syncKiroSkills,
+  sessionCodec: kiroSessionCodec,
+  sessionManagement: getAdapterSessionManagement("kiro_local") ?? undefined,
+  models: kiroModels,
+  listModels: listKiroModels,
+  supportsLocalAgentJwt: true,
+  agentConfigurationDoc: kiroAgentConfigurationDoc,
+};
+
+const adaptersByType = new Map<string, ServerAdapterModule>(
   [
     claudeLocalAdapter,
     codexLocalAdapter,
@@ -200,13 +217,14 @@ const adaptersByType = new Map<string, ServerAdapterModule & { detectModel?: () 
     geminiLocalAdapter,
     openclawGatewayAdapter,
     hermesLocalAdapter,
+    kiroLocalAdapter,
     processAdapter,
     httpAdapter,
   ].map((a) => [a.type, a]),
 );
 
 export function getServerAdapter(type: string): ServerAdapterModule {
-  const adapter = adaptersByType.get(normalizeAgentAdapterType(type));
+  const adapter = adaptersByType.get(type);
   if (!adapter) {
     // Fall back to process adapter for unknown types
     return processAdapter;
@@ -215,7 +233,7 @@ export function getServerAdapter(type: string): ServerAdapterModule {
 }
 
 export async function listAdapterModels(type: string): Promise<{ id: string; label: string }[]> {
-  const adapter = adaptersByType.get(normalizeAgentAdapterType(type));
+  const adapter = adaptersByType.get(type);
   if (!adapter) return [];
   if (adapter.listModels) {
     const discovered = await adapter.listModels();
@@ -224,19 +242,10 @@ export async function listAdapterModels(type: string): Promise<{ id: string; lab
   return adapter.models ?? [];
 }
 
-export async function detectAdapterModel(
-  type: string,
-): Promise<{ model: string | null; provider: string | null; source: string | null } | null> {
-  const adapter = adaptersByType.get(type);
-  if (!adapter?.detectModel) return null;
-  const detected = await adapter.detectModel();
-  return detected ? { model: detected.model, provider: detected.provider, source: detected.source } : null;
-}
-
-export function listServerAdapters() {
+export function listServerAdapters(): ServerAdapterModule[] {
   return Array.from(adaptersByType.values());
 }
 
 export function findServerAdapter(type: string): ServerAdapterModule | null {
-  return adaptersByType.get(normalizeAgentAdapterType(type)) ?? null;
+  return adaptersByType.get(type) ?? null;
 }

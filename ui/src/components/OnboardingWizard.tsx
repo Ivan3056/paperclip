@@ -8,7 +8,6 @@ import { companiesApi } from "../api/companies";
 import { goalsApi } from "../api/goals";
 import { agentsApi } from "../api/agents";
 import { issuesApi } from "../api/issues";
-import { projectsApi } from "../api/projects";
 import { queryKeys } from "../lib/queryKeys";
 import { Dialog, DialogPortal } from "@/components/ui/dialog";
 import {
@@ -25,11 +24,6 @@ import {
 import { getUIAdapter } from "../adapters";
 import { defaultCreateValues } from "./agent-config-defaults";
 import { parseOnboardingGoalInput } from "../lib/onboarding-goal";
-import {
-  buildOnboardingIssuePayload,
-  buildOnboardingProjectPayload,
-  selectDefaultCompanyGoalId
-} from "../lib/onboarding-launch";
 import {
   DEFAULT_CODEX_LOCAL_BYPASS_APPROVALS_AND_SANDBOX,
   DEFAULT_CODEX_LOCAL_MODEL
@@ -51,23 +45,21 @@ import {
   Terminal,
   Sparkles,
   MousePointer2,
-  Globe,
   Check,
   Loader2,
   ChevronDown,
   X
 } from "lucide-react";
-import { HermesIcon } from "./HermesIcon";
 
 type Step = 1 | 2 | 3 | 4;
 type AdapterType =
   | "claude_local"
   | "codex_local"
   | "gemini_local"
-  | "hermes_local"
   | "opencode_local"
   | "pi_local"
   | "cursor"
+  | "kiro_local"
   | "http"
   | "openclaw_gateway";
 
@@ -153,11 +145,7 @@ export function OnboardingWizard() {
   const [createdCompanyPrefix, setCreatedCompanyPrefix] = useState<
     string | null
   >(null);
-  const [createdCompanyGoalId, setCreatedCompanyGoalId] = useState<string | null>(
-    null
-  );
   const [createdAgentId, setCreatedAgentId] = useState<string | null>(null);
-  const [createdProjectId, setCreatedProjectId] = useState<string | null>(null);
   const [createdIssueRef, setCreatedIssueRef] = useState<string | null>(null);
 
   useEffect(() => {
@@ -173,10 +161,6 @@ export function OnboardingWizard() {
     setStep(effectiveOnboardingOptions.initialStep ?? 1);
     setCreatedCompanyId(cId);
     setCreatedCompanyPrefix(null);
-    setCreatedCompanyGoalId(null);
-    setCreatedProjectId(null);
-    setCreatedAgentId(null);
-    setCreatedIssueRef(null);
   }, [
     effectiveOnboardingOpen,
     effectiveOnboardingOptions.companyId,
@@ -211,24 +195,21 @@ export function OnboardingWizard() {
     adapterType === "claude_local" ||
     adapterType === "codex_local" ||
     adapterType === "gemini_local" ||
-    adapterType === "hermes_local" ||
     adapterType === "opencode_local" ||
-    adapterType === "pi_local" ||
-    adapterType === "cursor";
+    adapterType === "cursor" ||
+    adapterType === "kiro_local";
   const effectiveAdapterCommand =
     command.trim() ||
     (adapterType === "codex_local"
       ? "codex"
       : adapterType === "gemini_local"
         ? "gemini"
-      : adapterType === "hermes_local"
-        ? "hermes"
-      : adapterType === "pi_local"
-      ? "pi"
       : adapterType === "cursor"
       ? "agent"
       : adapterType === "opencode_local"
       ? "opencode"
+      : adapterType === "kiro_local"
+      ? "kiro-cli"
       : "claude");
 
   useEffect(() => {
@@ -304,9 +285,7 @@ export function OnboardingWizard() {
     setTaskDescription(DEFAULT_TASK_DESCRIPTION);
     setCreatedCompanyId(null);
     setCreatedCompanyPrefix(null);
-    setCreatedCompanyGoalId(null);
     setCreatedAgentId(null);
-    setCreatedProjectId(null);
     setCreatedIssueRef(null);
   }
 
@@ -331,8 +310,7 @@ export function OnboardingWizard() {
       command,
       args,
       url,
-      dangerouslySkipPermissions:
-        adapterType === "claude_local" || adapterType === "opencode_local",
+      dangerouslySkipPermissions: adapterType === "claude_local",
       dangerouslyBypassSandbox:
         adapterType === "codex_local"
           ? DEFAULT_CODEX_LOCAL_BYPASS_APPROVALS_AND_SANDBOX
@@ -394,7 +372,7 @@ export function OnboardingWizard() {
 
       if (companyGoal.trim()) {
         const parsedGoal = parseOnboardingGoalInput(companyGoal);
-        const goal = await goalsApi.create(company.id, {
+        await goalsApi.create(company.id, {
           title: parsedGoal.title,
           ...(parsedGoal.description
             ? { description: parsedGoal.description }
@@ -402,12 +380,9 @@ export function OnboardingWizard() {
           level: "company",
           status: "active"
         });
-        setCreatedCompanyGoalId(goal.id);
         queryClient.invalidateQueries({
           queryKey: queryKeys.goals.list(company.id)
         });
-      } else {
-        setCreatedCompanyGoalId(null);
       }
 
       setStep(2);
@@ -548,38 +523,16 @@ export function OnboardingWizard() {
     setLoading(true);
     setError(null);
     try {
-      let goalId = createdCompanyGoalId;
-      if (!goalId) {
-        const goals = await goalsApi.list(createdCompanyId);
-        goalId = selectDefaultCompanyGoalId(goals);
-        setCreatedCompanyGoalId(goalId);
-      }
-
-      let projectId = createdProjectId;
-      if (!projectId) {
-        const project = await projectsApi.create(
-          createdCompanyId,
-          buildOnboardingProjectPayload(goalId)
-        );
-        projectId = project.id;
-        setCreatedProjectId(projectId);
-        queryClient.invalidateQueries({
-          queryKey: queryKeys.projects.list(createdCompanyId)
-        });
-      }
-
       let issueRef = createdIssueRef;
       if (!issueRef) {
-        const issue = await issuesApi.create(
-          createdCompanyId,
-          buildOnboardingIssuePayload({
-            title: taskTitle,
-            description: taskDescription,
-            assigneeAgentId: createdAgentId,
-            projectId,
-            goalId
-          })
-        );
+        const issue = await issuesApi.create(createdCompanyId, {
+          title: taskTitle.trim(),
+          ...(taskDescription.trim()
+            ? { description: taskDescription.trim() }
+            : {}),
+          assigneeAgentId: createdAgentId,
+          status: "todo"
+        });
         issueRef = issue.identifier ?? issue.id;
         setCreatedIssueRef(issueRef);
         queryClient.invalidateQueries({
@@ -850,16 +803,10 @@ export function OnboardingWizard() {
                             desc: "Local Cursor agent"
                           },
                           {
-                            value: "http" as const,
-                            label: "HTTP Webhook",
-                            icon: Globe,
-                            desc: "Send heartbeats to any HTTP endpoint"
-                          },
-                          {
-                            value: "hermes_local" as const,
-                            label: "Hermes Agent",
-                            icon: HermesIcon,
-                            desc: "Local multi-provider agent"
+                            value: "kiro_local" as const,
+                            label: "Kiro",
+                            icon: Terminal,
+                            desc: "Local Kiro agent"
                           },
                           {
                             value: "openclaw_gateway" as const,
@@ -899,6 +846,10 @@ export function OnboardingWizard() {
                                 }
                                 return;
                               }
+                              if (nextType === "kiro_local") {
+                                setModel("auto");
+                                return;
+                              }
                               setModel("");
                             }}
                           >
@@ -920,10 +871,10 @@ export function OnboardingWizard() {
                   {(adapterType === "claude_local" ||
                     adapterType === "codex_local" ||
                     adapterType === "gemini_local" ||
-                    adapterType === "hermes_local" ||
                     adapterType === "opencode_local" ||
                     adapterType === "pi_local" ||
-                    adapterType === "cursor") && (
+                    adapterType === "cursor" ||
+                    adapterType === "kiro_local") && (
                     <div className="space-y-3">
                       <div>
                         <label className="text-xs text-muted-foreground mb-1 block">
@@ -964,7 +915,7 @@ export function OnboardingWizard() {
                               onChange={(e) => setModelSearch(e.target.value)}
                               autoFocus
                             />
-                            {adapterType !== "opencode_local" && (
+                            {adapterType !== "opencode_local" && adapterType !== "kiro_local" && (
                               <button
                                 className={cn(
                                   "flex items-center gap-2 w-full px-2 py-1.5 text-sm rounded hover:bg-accent/50",
