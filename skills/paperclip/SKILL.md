@@ -36,6 +36,7 @@ Follow these steps every time you wake up:
     Always include links to the approval and issue in that comment.
 
 **Step 3 — Get assignments.** Prefer `GET /api/agents/me/inbox-lite` for the normal heartbeat inbox. It returns the compact assignment list you need for prioritization. Fall back to `GET /api/companies/{companyId}/issues?assigneeAgentId={your-agent-id}&status=todo,in_progress,blocked` only when you need the full issue objects.
+**Project scoping (required when `PAPERCLIP_TASK_ID` is set):** If `PAPERCLIP_TASK_ID` is set, pass it as `currentIssueId` to scope the inbox to issues in the same project: `GET /api/agents/me/inbox-lite?currentIssueId=$PAPERCLIP_TASK_ID`. This ensures you only see issues from the same project as the triggering task — or only projectless issues if the triggering task has no project.
 
 **Step 4 — Pick work (with mention exception).** Work on `in_progress` first, then `todo`. Skip `blocked` unless you can unblock it.
 **Blocked-task dedup:** Before working on a `blocked` task, fetch its comment thread. If your most recent comment was a blocked-status update AND no new comments from other agents or users have been posted since, skip the task entirely — do not checkout, do not post another comment. Exit the heartbeat (or move to the next task) instead. Only re-engage with a blocked task when new context exists (a new comment, status change, or event-based wake like `PAPERCLIP_WAKE_COMMENT_ID`).

@@ -985,10 +985,20 @@ export function agentRoutes(db: Db) {
     }
 
     const issuesSvc = issueService(db);
-    const rows = await issuesSvc.list(req.actor.companyId, {
+    const listFilters: Parameters<typeof issuesSvc.list>[1] = {
       assigneeAgentId: req.actor.agentId,
       status: "todo,in_progress,blocked",
-    });
+    };
+
+    const currentIssueId = typeof req.query.currentIssueId === "string" ? req.query.currentIssueId : undefined;
+    if (currentIssueId) {
+      const currentIssue = await issuesSvc.getById(currentIssueId);
+      if (currentIssue) {
+        listFilters.projectId = currentIssue.projectId ?? null;
+      }
+    }
+
+    const rows = await issuesSvc.list(req.actor.companyId, listFilters);
 
     res.json(
       rows.map((issue) => ({
