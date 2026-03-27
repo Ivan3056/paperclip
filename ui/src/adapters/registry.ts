@@ -1,39 +1,30 @@
 import type { UIAdapterModule } from "./types";
-import { normalizeAgentAdapterType } from "@paperclipai/shared";
 import { claudeLocalUIAdapter } from "./claude-local";
 import { codexLocalUIAdapter } from "./codex-local";
 import { cursorLocalUIAdapter } from "./cursor";
 import { geminiLocalUIAdapter } from "./gemini-local";
 import { openCodeLocalUIAdapter } from "./opencode-local";
+import { kiloCodeLocalUIAdapter } from "./kilocode-local";
 import { piLocalUIAdapter } from "./pi-local";
-import { hermesLocalUIAdapter } from "./hermes-local";
 import { openClawGatewayUIAdapter } from "./openclaw-gateway";
-import { kiroLocalUIAdapter } from "./kiro-local";
 import { processUIAdapter } from "./process";
 import { httpUIAdapter } from "./http";
 
-const uiAdapters: UIAdapterModule[] = [
-  claudeLocalUIAdapter,
-  codexLocalUIAdapter,
-  geminiLocalUIAdapter,
-  openCodeLocalUIAdapter,
-  piLocalUIAdapter,
-  hermesLocalUIAdapter,
-  cursorLocalUIAdapter,
-  openClawGatewayUIAdapter,
-  kiroLocalUIAdapter,
-  processUIAdapter,
-  httpUIAdapter,
-];
-
 const adaptersByType = new Map<string, UIAdapterModule>(
-  uiAdapters.map((a) => [a.type, a]),
+  [
+    claudeLocalUIAdapter,
+    codexLocalUIAdapter,
+    geminiLocalUIAdapter,
+    openCodeLocalUIAdapter,
+    kiloCodeLocalUIAdapter,
+    piLocalUIAdapter,
+    cursorLocalUIAdapter,
+    openClawGatewayUIAdapter,
+    processUIAdapter,
+    httpUIAdapter,
+  ].map((a) => [a.type, a]),
 );
 
 export function getUIAdapter(type: string): UIAdapterModule {
-  return adaptersByType.get(normalizeAgentAdapterType(type)) ?? processUIAdapter;
-}
-
-export function listUIAdapters(): UIAdapterModule[] {
-  return [...uiAdapters];
+  return adaptersByType.get(type) ?? processUIAdapter;
 }

@@ -158,8 +158,9 @@ async function importServerEntry(): Promise<StartedServer> {
 
   // Production mode: import the published @paperclipai/server package
   try {
-    const mod = await import("@paperclipai/server");
-    return await startServerFromModule(mod, "@paperclipai/server");
+    const serverPackage = "@paperclipai/server";
+    const mod = await import(serverPackage);
+    return await startServerFromModule(mod, serverPackage);
   } catch (err) {
     const missingSpecifier = getMissingModuleSpecifier(err);
     const missingServerEntrypoint = !missingSpecifier || missingSpecifier === "@paperclipai/server";
